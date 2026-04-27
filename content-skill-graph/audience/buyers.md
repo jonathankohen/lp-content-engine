@@ -2,23 +2,34 @@
 
 ## Who They Are
 
-Indie hackers, solo founders, AI engineers, SaaS builders,
-freelancers, agency owners. Already building something or
-actively planning to. Technical enough to implement what you teach.
-Revenue range $0-$50k/mo, aspiring to scale.
+Talent buyers, venue bookers, event promoters, and other booking agencies.
+They have budgets, calendars to fill, and reputations on the line. They need
+acts that reliably draw crowds, deliver professional performances, and make
+patrons happy enough to come back.
 
 ## What They Want
 
-- Actionable playbooks, not theory. Steps they can follow TODAY.
-- Real numbers: revenue, metrics, costs, time saved.
-- Tool recommendations with context — not just "use this tool"
-  but "here's when and why."
-- Systems thinking — how pieces connect, not just individual tactics.
+- Proof that our acts sell tickets. Real numbers, sold-out shows,
+  repeat engagements.
+- Patron satisfaction evidence — reviews, crowd photos, rave testimonials.
+- Confidence that booking our acts is a safe, low-risk decision.
+- A sense of what the act actually looks like live — energy, production value,
+  audience reaction.
 
 ## How to Talk to Them
 
-- Direct and specific. "Here's 5 steps" not "consider exploring."
-- Show your work: real screenshots, real numbers, real process.
-- Peer energy — building alongside them, not above them.
-- Challenge them: "If you're not doing this, you're leaving
-  money on the table."
+- Lead with results: "sold out in 3 days," "standing ovation," "venue re-booked
+  for next season."
+- Social proof is everything. Photos of packed rooms. Quotes from happy patrons.
+  Reviews from other buyers.
+- Position Love Productions as a trusted partner, not just a vendor. We know
+  our acts, we know live music, we make buyers look good.
+- Make booking feel obvious. If they're on the fence, the content should tip them.
+
+## Content That Converts Buyers
+
+- Sold-out show announcements with ticket count or crowd photos
+- Post-show recaps showing patron energy and reactions
+- Press coverage, awards, or notable milestones for our acts
+- Re-booking announcements ("back by popular demand")
+- Behind-the-scenes professionalism: rehearsals, production, artist dedication

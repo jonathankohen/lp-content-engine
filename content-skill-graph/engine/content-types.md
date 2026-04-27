@@ -1,37 +1,51 @@
 # Content Types & Formats
 
-## Thread / Multi-Part Post
+## Show Announcement
 
-- Platforms: X (thread), LinkedIn (multi-paragraph), Threads
-- When: Step-by-step guides, listicles, breakdowns
-- Structure: Hook → numbered steps → conclusion + CTA
+- Platforms: LinkedIn, Instagram, Facebook
+- When: 2-3 weeks before a show, 1 week out, day before/day of
+- Structure: Hook (act + date + venue) → hype → ticket link / booking CTA
+- LinkedIn angle: results and credibility. Instagram: visual urgency. Facebook: event post.
+
+## Post-Show Recap
+
+- Platforms: Instagram (photos/carousel), Facebook (discussion), LinkedIn (results)
+- When: Within 24-48 hours of a show
+- Structure: Best crowd/stage photo → summary of the night → patron reaction or quote → CTA
+- Facebook version ends with a question: "Were you there? What was your favorite song?"
+
+## Artist Spotlight
+
+- Platforms: LinkedIn, Instagram, Facebook
+- When: Before a new act debuts, or to re-introduce an act to a new audience
+- Structure: Who they are → what makes them special → where to see them live → booking info
+- LinkedIn angle: what makes this act a reliable booking. Instagram: the visual identity.
+
+## Milestone / Achievement Post
+
+- Platforms: LinkedIn (primary), Instagram, Facebook
+- When: Sold-out show, award, press mention, notable re-booking, anniversary
+- Structure: The result (lead with the headline) → context → what it means for buyers or fans
+- These are the most powerful buyer-facing posts. Always include specifics.
+
+## Original Artist News
+
+- Platforms: Facebook (primary), Instagram, LinkedIn
+- When: News about the original artist that the tribute act represents
+- Structure: The news → how it connects to our tribute act → fan excitement angle
+- Example: "Dolly Parton just announced a documentary — and The Dolly Show is
+  celebrating with a special set this Friday."
 
 ## Carousel / Slide Post
 
-- Platforms: Instagram, LinkedIn (document posts)
-- When: Visual guides, processes, comparisons
-- Structure: Slide 1 = hook, slides 2-9 = content, last = CTA
+- Platforms: Instagram (primary), LinkedIn (document posts)
+- When: Show recaps, act introductions, "reasons to book" or "reasons to attend"
+- Structure: Slide 1 = bold hook, slides 2-6 = content moments, last = CTA with handle
+- One idea per slide. Max 30 words per slide.
 
-## Short-Form Video
+## Short Promo Take
 
-- Platforms: TikTok, Instagram Reels, YouTube Shorts
-- When: Quick tips, demos, reactions, behind-the-scenes
-- Structure: Hook (2 sec) → content (30-50 sec) → CTA (5 sec)
-
-## Long-Form Video
-
-- Platforms: YouTube
-- When: Tutorials, deep dives, system walkthroughs
-- Structure: Hook (30 sec) → context (90 sec) → main (6-8 min) → recap
-
-## Long-Form Text
-
-- Platforms: Newsletter, LinkedIn articles, blog
-- When: Deep analysis, personal stories, comprehensive guides
-- Length: 1,000-3,000 words
-
-## Short Take
-
-- Platforms: X, Threads, Facebook
-- When: Hot takes, observations, single insights
-- Length: Under 280 chars (X) or 500 chars (Threads)
+- Platforms: Facebook, Instagram caption
+- When: Quick ticket push, countdown, urgency reminder
+- Length: 1-3 sentences. Direct and punchy.
+- Example: "Only a handful of tickets left for Saturday. Don't be the one who waits too long."

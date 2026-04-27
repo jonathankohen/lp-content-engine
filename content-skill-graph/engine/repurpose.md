@@ -1,101 +1,67 @@
 # Repurposing Chain
 
-One idea enters. Ten platform-native posts come out. Each one
+One idea enters. Three platform-native posts come out. Each one
 thinks about the topic differently — this is NOT reformatting.
 
 ## The Chain Order
 
 Write in this order. Each step builds on the previous but adapts.
 
-### Step 1: X (Write First)
+### Step 1: [LinkedIn](../platforms/linkedin.md) (Write First — Buyer Angle)
 
-X forces brevity. Starting here makes you find the core idea
-and the sharpest hook. Everything else expands from this.
+LinkedIn forces you to lead with proof and business value. Starting here
+ensures the core result and credibility are clear before you adapt for fans.
 
-- Output: One tweet or long-form tweet (280-2,000 chars)
+- Frame it for buyers: sold-out shows, re-bookings, patron results, industry milestones.
+- Output: Professional post, 1,300-2,000 characters.
+- End with a soft booking CTA.
 
-### Step 2: [LinkedIn](../platforms/linkedin.md) (Expand with Narrative)
+### Step 2: [Instagram](../platforms/instagram.md) (Fan Energy, Visual First)
 
-Take the X post, add personal story and deeper analysis.
-Don't just add more words — add a DIFFERENT ANGLE.
+Strip the business framing. Lead with the visual excitement and fan experience.
+The angle shifts from "why buyers should book this act" to "why fans can't miss
+this show."
 
-- X says: "I replaced my content team with .md files"
-- LinkedIn says: "3 months ago I was spending $8k/mo on content.
-  Here's what happened when I built a system with markdown and Claude."
-- Output: Long-form post (1,300-2,000 chars)
+- LinkedIn says: "The Dolly Show sold out three consecutive runs this season,
+  with patron satisfaction reviews averaging 4.9/5."
+- Instagram says: "SOLD OUT. Again. 🎸 The Dolly Show is back this fall —
+  and tickets will go fast. Link in bio."
+- Output: Image or carousel post + caption with hashtags and ticket link CTA.
 
-### Step 3: [Instagram](../platforms/instagram.md) (Make it Visual)
+### Step 3: [Facebook](../platforms/facebook.md) (Community, Conversation)
 
-Extract key points and turn into carousel slides. Angle shifts
-to visual-first, scannable, aspirational.
+Take the Instagram energy and warm it up. Add personal context and
+an invitation to engage. Frame it as sharing good news with the community,
+not broadcasting to an audience.
 
-- Output: 7-10 slide carousel + caption
-- Slide 1 = bold hook
-- Each slide = one idea, max 30 words
-
-### Step 4: TikTok (Make it Raw)
-
-Condense to a 45-60 second script. The angle is SHOWING, not telling.
-
-- Output: Video script with timestamps
-- Hook in first 2 seconds
-- Show the system in action if possible
-
-### Step 5: YouTube (Make it Deep)
-
-Combine everything into a structured tutorial. The viewer should
-be able to REPLICATE what you're showing.
-
-- Output: Full video outline (8-12 min)
-- SEO title + description
-- Timestamps for chapters
-
-### Step 6: Newsletter (Make it Personal)
-
-Deepest, most personal take. Behind-the-scenes context, lessons,
-exclusive insights not shared on social.
-
-- Output: 1,000-2,000 word email
-
-### Step 7: Threads (Make it Conversational)
-
-Adapt the X version with a more relaxed, opinion-driven angle.
-
-- Output: 1-3 short posts (under 500 chars each)
-
-### Step 8: [Facebook](../platforms/facebook.md) (Make it Community)
-
-Add a discussion question. Frame it as an invitation to share,
-not just consume.
-
-- Output: Post with a question at the end
+- Output: Post with a question or invitation at the end.
+- Share to relevant local groups and events pages.
 
 ## The Litmus Test
 
 Each platform version should pass this test:
 
-"If someone followed me on ALL platforms, would they be
-annoyed seeing the same thing everywhere?"
+"If someone followed us on ALL three platforms, would they be annoyed
+seeing the same thing everywhere?"
 
 If yes → you're reformatting, not rethinking. Go back.
-If no → you've made 8 unique pieces from one idea. That's the goal.
+If no → you've made 3 unique pieces from one idea. That's the goal.
 
 ## What Actually Changes Between Platforms
 
-| Element | How It Adapts                             |
-| ------- | ----------------------------------------- |
-| Angle   | Different entry point into the same topic |
-| Hook    | Rewritten per platform                    |
-| Tone    | Adjusted per [Platform Tone][pt]          |
-| Format  | Thread vs carousel vs video vs long-form  |
-| Length  | 280 chars → 2,000 words                   |
-| Depth   | Surface insight → deep tutorial           |
+| Element | How It Adapts                                      |
+| ------- | -------------------------------------------------- |
+| Angle   | Buyer proof → Fan excitement → Community warmth    |
+| Hook    | Rewritten per platform                             |
+| Tone    | Professional → Energetic → Warm. See [Platform Tone][pt] |
+| Format  | Long-form narrative → Visual caption → Discussion post |
+| CTA     | "Book now" → "Get tickets" → "Were you there?"     |
 
 ## Batch Workflow
 
-1. Write ALL platform versions in one session, not across days.
+1. Write ALL three platform versions in one session, not across days.
 2. Follow the chain order — each step feeds the next.
-3. Review all 8 outputs together before publishing any.
+3. Review all three outputs together before publishing any.
 4. Schedule using [Scheduling](scheduling.md) to stagger across the week.
 
 [pt]: ../voice/platform-tone.md

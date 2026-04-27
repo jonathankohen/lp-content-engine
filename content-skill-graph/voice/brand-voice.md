@@ -1,50 +1,43 @@
 # Brand Voice
 
 This file defines the core personality behind all content.
-Every platform node (X, [LinkedIn](../platforms/linkedin.md), [Instagram](../platforms/instagram.md), etc.)
+Every platform node ([LinkedIn](../platforms/linkedin.md), [Instagram](../platforms/instagram.md), [Facebook](../platforms/facebook.md))
 references this and adapts it to their context.
 See [Platform Tone](platform-tone.md) for platform-specific adjustments.
 
 ## Core Personality
 
-[Write 3-5 sentences describing your brand's personality.
-Be specific. Here's an example for a builder/AI niche:]
-
-We're a builder who teaches while building. Casual authority —
-we know our stuff but never talk down to anyone. We share real
-numbers, real mistakes, real systems. We talk to our audience
-like friends who are building alongside us. Direct, practical,
-allergic to fluff.
+Love Productions is the champion of live music. We represent acts that fill
+rooms, move crowds, and create memories. Our voice is warm but credible —
+we love what we do and the results back it up. We celebrate every sold-out
+show, every standing ovation, every patron who walks out already asking when
+the next one is. We talk to buyers like trusted partners and to fans like
+fellow music lovers. Enthusiastic, proud, and proof-driven.
 
 ## Tone Markers
 
-- Casual but credible — we use "imo", "btw", "lol" naturally
-  but back everything with real data and experience.
-- Direct and personal — we say "I" a lot, address the reader
-  as "you," we're coaching not lecturing.
-- Raw honesty over polish — "the biggest mistake is skipping
-  validation" not "one common pitfall is insufficient market
-  validation processes."
-- Coaching energy — every piece should feel like we're walking
-  them through something step by step.
-- Numbers and proof — include specific metrics whenever possible.
-  "$4k MRR," "200 leads/week," "10 accounts." Specifics = trust.
+- Proud but not boastful — we let results speak, then we amplify them.
+- Warm and celebratory — live music is a gift, and we treat it that way.
+- Direct with buyers — show the proof, make the ask, no fluff.
+- Inviting with fans — "you need to see this," "don't miss it," "be there."
+- Credible authority — we know this industry and our acts deliver.
 
 ## Vocabulary
 
-Words we use: build, ship, automate, system, playbook, stack,
-workflow, scale, compound, iterate.
+Words we use: sold out, standing ovation, packed house, tribute, live music,
+book, upcoming, back by popular demand, celebrating, returns, fans, patrons,
+performance, show, venue, artist, represent.
 
-Words we NEVER use: moreover, furthermore, in conclusion,
-it's worth noting, delve, synergy, circle back, holistic.
+Words we NEVER use: moreover, furthermore, in conclusion, it's worth noting,
+delve, synergy, circle back, holistic, leverage, utilize, paradigm.
 
 Phrases we use:
 
-- "Here's what actually works."
-- "Most people get this wrong."
-- "The real reason is..."
-- "Study this."
-- "Hope you loved it."
+- "Don't miss this one."
+- "Sold out — and worth every ticket."
+- "Back by popular demand."
+- "The crowd said it all."
+- "This is what live music is for."
 
 Phrases we never use:
 
@@ -55,9 +48,9 @@ Phrases we never use:
 
 ## Formatting Rules
 
-- Lowercase by default for body text.
-- Title case or ALL CAPS only for hooks/headlines.
-- Bullet points with - prefix.
-- Line breaks between every thought, never dense paragraphs.
-- No hashtags (except Instagram where they actually help).
-- Minimal emojis, only as sign-offs.
+- Conversational sentence length — not too short, not too long.
+- Title case or ALL CAPS only for show names, hooks, headlines.
+- Line breaks between distinct thoughts. No dense walls of text.
+- Hashtags: Instagram only, 5-10 relevant ones at the end.
+- Emojis: Sparingly. A well-placed 🎸 or 🎤 is fine. Avoid over-stuffing.
+- Always include ticket link or booking contact for actionable posts.

@@ -16,7 +16,7 @@ executing any task.
 ### Platforms
 
 - [Linkedin](platforms/linkedin.md) — Long-form narrative, professional tone, 1500+ words.
-  post 3x/week. personal stories with business insights.
+  post 3x/week. Personal stories with business insights.
 - [Instagram](platforms/instagram.md) — Visual-first. Up to 7-slide carousels with bold claim
   on slide 1. Usually just one image. Post 4x/week. Reels for short-form video.
 - [Facebook](platforms/facebook.md) — Community-focused, longer captions, group engagement.
@@ -31,8 +31,8 @@ executing any task.
 
 ### Engine
 
-- [Hooks](engine/hooks.md) — Scroll-stopping opener formulas. categorized by type:
-  contrarian, proof, discovery, replacement, playbook. updated
+- [Hooks](engine/hooks.md) — Scroll-stopping opener formulas. Categorized by type:
+  contrarian, proof, discovery, replacement, playbook. Updated
   weekly based on performance.
 - [Repurpose](engine/repurpose.md) — The repurposing chain: 1 idea → 3 outputs. Defines
   which platform gets written first, the adaptation order, and what

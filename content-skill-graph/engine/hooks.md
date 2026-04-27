@@ -3,61 +3,36 @@
 Use these to open every post. Match hook type to platform and topic.
 See [Platform Tone](../voice/platform-tone.md) for delivery adjustments.
 
-## The Playbook Hook
+## Upcoming Shows
 
-"Here's [N] steps to [desirable outcome]:"
+"Don't miss (band) at (venue) (date, fully written out as such: June 17th) at (time)"
 
-- Best on: X, LinkedIn, YouTube titles
+- Best on: Instagram, Facebook
 - Examples:
-  - "Here's 7 steps to automate your content production:"
-  - "Here's how I run 10 accounts without writing manually:"
+  - "Check out Legends of Classic Rock at The Dolby Theatre on June 17th at 8:00pm. Tickets are going fast! https://exampleticketlink.com"
+  - "Tonight! Don't miss The Dolly Show at The Middle East. Get tickets here: https://exampleticketlink.com"
 
-## The Proof Hook
+## Tribute Band News
 
-"[Before metric] → [after metric] in [timeframe]"
+"The Dolly Show just won a well-deserved award for excellence: (link to article)"
 
-- Best on: X, LinkedIn
+- Best on: LinkedIn, Instagram, Facebook
 - Examples:
-  - "0 → 10 accounts managed in 30 days using markdown files"
-  - "$8k/mo content spend → $0 after building one system"
+  - "The Dolly Show just took home Best Tribute Act at the New England Music Awards. Here's why this one means a lot: (link)"
+  - "Three sold-out nights. Standing ovations every show. The Legends of Classic Rock just wrapped their best run yet."
 
-## The Contrarian Hook
+## News from Artist Represented by Tribute
 
-"You don't need [conventional thing]. You need [this instead]."
+"Dolly Parton is speaking out against (something)"
 
-- Best on: X, Threads
+- Best on: LinkedIn, Instagram, Facebook
 - Examples:
-  - "You don't need a content team. You need a skill graph."
-  - "You don't need 15 tools. You need 15 markdown files."
-
-## The Replacement Hook
-
-"I replaced [expensive/complex thing] with [simple thing]"
-
-- Best on: X, TikTok, Instagram slide 1
-- Examples:
-  - "I replaced my $8k/mo content team with a folder of .md files"
-  - "I replaced 5 content tools with 30 linked markdown files"
-
-## The Discovery Hook
-
-"I just found [valuable thing]"
-
-- Best on: X
-- Examples:
-  - "I just found a way to make AI write differently per platform"
-
-## The Behind-the-Scenes Hook
-
-"I run [impressive thing] and [surprising method]"
-
-- Best on: X, LinkedIn, YouTube titles
-- Examples:
-  - "I run 10 social media accounts and don't write a single post"
+  - "Dolly Parton just announced a stadium tour — and The Dolly Show is celebrating all month long. Come see why fans say it's the next best thing."
+  - "The Eagles just got inducted into the Rock Hall again. If that made you smile, you need to see Legends of Classic Rock live."
 
 ## Rules
 
 - Test 2-3 hooks per topic before publishing.
 - Track which types get the most engagement per platform.
 - Update this weekly. Remove underperformers, add new winners.
-- Hook for X is almost never the same as hook for [LinkedIn](../platforms/linkedin.md).
+<!-- - Hook for X is almost never the same as hook for [LinkedIn](../platforms/linkedin.md). -->

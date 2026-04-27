@@ -2,21 +2,24 @@
 
 ## Who They Are
 
-Curious about AI/tech but not deeply technical. Might be
-professionals in non-tech roles thinking about AI. Early in
-their journey, consuming more than creating. Aspirational —
-they want to be builders but haven't started yet.
+Music-lovers, concert-goers, and ticket-buyers. They love live music and
+they especially love tribute acts — the chance to experience the music of
+their favorite artists performed live, sometimes better than they expected.
+They follow our acts on social because they want to know when the next show is.
 
 ## What They Want
 
-- Simplified explanations of complex topics.
-- Inspiration and "I can do this too" energy.
-- Entry points — where to start, what to learn first.
-- Results that seem achievable, not intimidating.
+- Upcoming show announcements with dates, venues, and ticket links.
+- News about the artists their favorite tribute acts represent.
+- Behind-the-scenes moments — rehearsals, backstage, touring life.
+- The feeling of being part of something — a community of fans who share
+  a love for the same music.
+- Reminders that live music is worth showing up for.
 
 ## How to Talk to Them
 
-- Simpler language. Explain acronyms. Define terms.
-- More encouraging, less challenging.
-- "Here's the easiest way to start" energy.
-- Analogies and comparisons to things they already understand.
+- Enthusiastic and inviting. "Don't miss this one."
+- Make every show feel like an event. Create urgency without being pushy.
+- Share the joy. Post-show energy, crowd reactions, fan photos.
+- Celebrate the artists they love — the originals AND the tributes.
+- "You need to see this live" energy.
