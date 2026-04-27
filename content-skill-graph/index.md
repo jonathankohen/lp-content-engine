@@ -44,9 +44,9 @@ executing any task.
 
 ### Audience
 
-- [Fans](audience/fans.md) — Primary audience. Music-lovers, concert-goers, and ticket-buyers. They want
+- [Buyers](audience/buyers.md) — Primary audience. Talent buyers, and other booking agencies. For this audience, we want to inspire them to book our acts. They want to see results and artist success for our acts specifically.
+- [Fans](audience/fans.md) — Secondary audience. Music-lovers, concert-goers, and ticket-buyers. They want
   information about upcoming shows, news about our acts and the artists they represent.
-- [Buyers](audience/buyers.md) — Secondary audience. Talent buyers, and other booking agencies. For this audience, we want to inspire them to book our acts. They want to see results and artist success for our acts specifically.
 
 ## 3. Execution Instructions
 
