@@ -1,7 +1,7 @@
 # Platform Tone Adaptations
 
 Core voice defined in [Brand Voice](brand-voice.md). This file defines
-how that voice ADAPTS per platform.
+how that voice *adapts* per platform.
 
 ## LinkedIn
 

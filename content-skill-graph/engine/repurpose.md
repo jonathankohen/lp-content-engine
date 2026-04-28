@@ -1,7 +1,7 @@
 # Repurposing Chain
 
 One idea enters. Three platform-native posts come out. Each one
-thinks about the topic differently — this is NOT reformatting.
+thinks about the topic differently—this is *not* reformatting.
 
 ## The Chain Order
 
@@ -41,7 +41,7 @@ not broadcasting to an audience.
 
 Each platform version should pass this test:
 
-"If someone followed us on ALL three platforms, would they be annoyed
+"If someone followed us on *all* three platforms, would they be annoyed
 seeing the same thing everywhere?"
 
 If yes → you're reformatting, not rethinking. Go back.
@@ -49,13 +49,13 @@ If no → you've made 3 unique pieces from one idea. That's the goal.
 
 ## What Actually Changes Between Platforms
 
-| Element | How It Adapts                                      |
-| ------- | -------------------------------------------------- |
-| Angle   | Buyer proof → Fan excitement → Community warmth    |
-| Hook    | Rewritten per platform                             |
+| Element | How It Adapts                                            |
+| ------- | -------------------------------------------------------- |
+| Angle   | Buyer proof → Fan excitement → Community warmth          |
+| Hook    | Rewritten per platform                                   |
 | Tone    | Professional → Energetic → Warm. See [Platform Tone][pt] |
-| Format  | Long-form narrative → Visual caption → Discussion post |
-| CTA     | "Book now" → "Get tickets" → "Were you there?"     |
+| Format  | Long-form narrative → Visual caption → Discussion post   |
+| CTA     | "Book now" → "Get tickets" → "Were you there?"           |
 
 ## Batch Workflow
 
