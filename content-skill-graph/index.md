@@ -15,7 +15,7 @@ executing any task.
 
 ### Platforms
 
-- [Linkedin](platforms/linkedin.md) — Long-form narrative, professional tone, 1500+ words.
+- [Linkedin](platforms/linkedin.md) — Long-form narrative, professional tone, 1,300-2,000 characters.
   post 3x/week. Personal stories with business insights.
 - [Instagram](platforms/instagram.md) — Visual-first. Up to 7-slide carousels with bold claim
   on slide 1. Usually just one image. Post 4x/week. Reels for short-form video.
@@ -32,7 +32,7 @@ executing any task.
 ### Engine
 
 - [Hooks](engine/hooks.md) — Scroll-stopping opener formulas. Categorized by type:
-  contrarian, proof, discovery, replacement, playbook. Updated
+  Upcoming Shows, Tribute Band News, Original Artist News. Updated
   weekly based on performance.
 - [Repurpose](engine/repurpose.md) — The repurposing chain: 1 idea → 3 outputs. Defines
   which platform gets written first, the adaptation order, and what

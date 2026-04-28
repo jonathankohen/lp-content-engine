@@ -19,8 +19,10 @@
 - Short paragraphs. One idea per paragraph. White space is your friend.
 - No hashtags in the body. If you use them, max 3 at the very end.
 - Links in the first comment, never in the post body. The algorithm penalizes.
-- Always end with a soft booking CTA: "Booking inquiries open for fall." /
-  "DM to check availability." / "Add your venue to the list."
+- Always end with a booking CTA that includes the email: "Reach out at info@loveproductions.com
+  to check availability." / "Email info@loveproductions.com for fall bookings." /
+  "DM us or email info@loveproductions.com — let's get this on your calendar."
+  Vary the phrasing but always include the email address.
 
 ## Formats That Work
 

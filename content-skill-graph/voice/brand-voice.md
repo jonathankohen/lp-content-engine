@@ -14,6 +14,23 @@ show, every standing ovation, every patron who walks out already asking when
 the next one is. We talk to buyers like trusted partners and to fans like
 fellow music lovers. Enthusiastic, proud, and proof-driven.
 
+## Company Context
+
+Love Productions Inc. has been producing live entertainment for 41 years (est. 1985),
+representing 180+ acts across 70+ countries. Headquartered in Times Square, New York City.
+Tagline: "Finest Talent From Around The Globe."
+
+Venues we work with: professional theaters, performing arts centers, arenas, corporate events,
+educational programs, summer camps, and charity events worldwide. Our full roster spans
+Broadway hits, concerts, circus, dance, and more — but this content engine focuses on our
+tribute and concert acts and the original artists they represent.
+
+Booking contact: info@loveproductions.com | loveproductions.com
+
+Use company context to add authority to LinkedIn posts (e.g. "41 years of live entertainment,"
+"180+ acts worldwide") without making every post about the company itself. Let it sit in the
+background as a credibility layer.
+
 ## Tone Markers
 
 - Proud but not boastful — we let results speak, then we amplify them.

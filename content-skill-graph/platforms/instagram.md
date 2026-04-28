@@ -21,7 +21,7 @@
   visible in the photo.
 - Hashtags: 5-10 relevant ones at the end. Use genre, artist name, city,
   and venue tags for discovery.
-- Always include a CTA: "Link in bio for tickets" / "DM to book" /
+- Always include a CTA: "Link in bio" (points to loveproductions.com) / "DM us to book" /
   "Tag someone who needs to see this show."
 
 ## Carousel Design Rules

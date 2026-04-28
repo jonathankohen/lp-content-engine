@@ -18,6 +18,8 @@
 - Post-show recaps with photos invite fans to share their experience.
 - Match [Brand Voice](../voice/brand-voice.md) but warmest version. See [Platform Tone](../voice/platform-tone.md).
 - Video (native upload) gets algorithm priority over linked video.
+- CTA for buyers: direct to loveproductions.com — "Visit loveproductions.com to see our full
+  roster and book your date." For fan-facing posts, end with a question instead.
 - Share to relevant local music and events groups, not just the page.
 
 ## Formats That Work
