@@ -40,7 +40,7 @@
 
 ## Repurposing Notes
 
-- Instagram is the SECOND platform in the [Repurpose](../engine/repurpose.md) chain.
+- Instagram is the *second* platform in the [Repurpose](../engine/repurpose.md) chain.
 - Take the LinkedIn proof angle → strip the business framing → lead with
   visual energy and fan excitement.
 - Show photos and crowd shots are the most valuable asset here. Always

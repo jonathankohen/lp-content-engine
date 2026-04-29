@@ -24,13 +24,13 @@
 
 ## Formats That Work
 
-1. Show Announcement — Date, venue, time, ticket link, short hype.
-2. Post-Show Recap — Photo + "What a night!" energy. Ask a question to
+1. Show Announcement: Date, venue, time, ticket link, short hype.
+2. Post-Show Recap: Photo + "What a night!" energy. Ask a question to
    invite comments ("Were you there? What was your favorite song?").
-3. Artist News — Something happening with the original artist our tribute
+3. Artist News: Something happening with the original artist our tribute
    represents. Tie it back to our act.
-4. Fan Appreciation — Shout out attendees, share fan photos (with permission).
-5. Event Countdown — "3 days until..." or "Tickets still available for..."
+4. Fan Appreciation: Shout out attendees, share fan photos (with permission).
+5. Event Countdown: "3 days until..." or "Tickets still available for..."
 
 ## Posting Strategy
 

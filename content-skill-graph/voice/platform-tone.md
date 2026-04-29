@@ -1,7 +1,8 @@
 # Platform Tone Adaptations
 
 Core voice defined in [Brand Voice](brand-voice.md). This file defines
-how that voice *adapts* per platform.
+how that voice *adapts* per platform. See [Humanizer](humanizer.md) for
+AI writing patterns to strip from every post regardless of platform.
 
 ## LinkedIn
 

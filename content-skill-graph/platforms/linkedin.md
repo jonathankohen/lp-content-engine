@@ -12,9 +12,9 @@
 
 - Lead with the result. "Sold out in 3 days." "Third run this season."
   "Standing ovation every night."
-- First line is EVERYTHING. LinkedIn truncates after ~210 characters with
+- First line is *everything*. LinkedIn truncates after ~210 characters with
   a "see more" button. The hook must earn the click.
-- Use [Hooks](../engine/hooks.md) — proof hooks and milestone announcements perform best.
+- Use [Hooks](../engine/hooks.md): proof hooks and milestone announcements perform best.
 - Match [Brand Voice](../voice/brand-voice.md) but professional. See [Platform Tone](../voice/platform-tone.md).
 - Short paragraphs. One idea per paragraph. White space is your friend.
 - No hashtags in the body. If you use them, max 3 at the very end.
@@ -26,15 +26,15 @@
 
 ## Formats That Work
 
-1. The Sold-Out Announcement — Lead with the result, give context on why
+1. The Sold-Out Announcement: Lead with the result, give context on why
    the act keeps delivering, close with booking availability.
-2. The Post-Show Recap — What happened, crowd reaction, patron quotes.
+2. The Post-Show Recap: What happened, crowd reaction, patron quotes.
    Include a photo or video if possible.
-3. The Milestone Post — Award wins, press coverage, anniversary shows.
+3. The Milestone Post: Award wins, press coverage, anniversary shows.
    Frame it as proof of the act's staying power.
-4. The Re-Booking Story — "Back by popular demand" is the strongest social
+4. The Re-Booking Story: "Back by popular demand" is the strongest social
    proof in live entertainment. Tell the story.
-5. The Industry Insight — Share a perspective on tribute acts, live music
+5. The Industry Insight: Share a perspective on tribute acts, live music
    trends, or what makes a booking work. Positions Love Productions as an
    authority, not just a vendor.
 
@@ -55,7 +55,7 @@
 
 ## Repurposing Notes
 
-- LinkedIn is usually written FIRST in the [Repurpose](../engine/repurpose.md) chain.
+- LinkedIn is usually written *first* in the [Repurpose](../engine/repurpose.md) chain.
 - The professional proof framing here gets simplified for Instagram
   and made conversational for Facebook.
 - The hook often needs a full rewrite for each subsequent platform.
