@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+*.json.key
+*credentials*.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Runtime
+/tmp/lp_content_throttle.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
