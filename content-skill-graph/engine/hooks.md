@@ -32,6 +32,16 @@ All posts have the same goal: to get buyers to book our acts. Please make every 
   - "Dolly Parton just announced a stadium tour--and The Dolly Show is celebrating all month long. Come join us for a packed show."
   - "The Eagles just got inducted into the Rock Hall again. If that made you smile, the Legends of Classic Rock would be a great fit for your venue."
 
+## Historical Fact about Artist Represented by Tribute
+
+"On this day in 1978, Dolly Parton released (song)" (make sure to give source in link)
+
+- Best on: Instagram, Facebook
+- Examples:
+	- "Did you know that Dolly Parton (lesser-known fact)? ..."
+	- "When writing (song), (artist) said their inspiration was..."
+
+
 ## Rules
 
 - Test 2-3 hooks per topic before publishing.

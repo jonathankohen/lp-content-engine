@@ -6,6 +6,8 @@
 - When: 2-3 weeks before a show, 1 week out, day before/day of
 - Structure: Hook (act + date + venue) → hype → ticket link / booking CTA
 - LinkedIn angle: results and credibility. Instagram: visual urgency. Facebook: event post.
+- Data provided: act name, venue address, confirmed date. Use the city/venue name naturally
+  in the post — do not paste a full street address. Create urgency around the specific date.
 
 ## Post-Show Recap
 

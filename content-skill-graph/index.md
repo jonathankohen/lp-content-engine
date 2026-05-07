@@ -33,6 +33,11 @@ executing any task.
 
 ### Engine
 
+- [Scoring](engine/scoring.md): Topic scoring and ranking system. Applied **before** post
+  generation to select the top 7 topics for the week (one per day). Five weighted criteria:
+  relevance, freshness, velocity, virality, uniqueness. Exclusive acts (see
+  [artists.md](engine/artists.md)) receive a +1.0 boost. Topics below 0.40 are dropped.
+  Show announcements bypass scoring entirely.
 - [Hooks](engine/hooks.md): Scroll-stopping opener formulas. Categorized by type:
   Upcoming Shows, Tribute Band News, Original Artist News. Updated
   weekly based on performance.
@@ -55,16 +60,19 @@ executing any task.
 When given a topic:
 
 1. Check if the topic aligns with our niche. If not, reject it
-2. Read [brand voice](voice/brand-voice.md) for core personality
-3. Read [hooks](engine/hooks.md) and select the best hook formula for the topic
-4. Read [repurpose](engine/repurpose.md) for the production chain order
-5. Write for the *first* platform in the chain (usually [LinkedIn](platforms/linkedin.md))
-6. For each subsequent platform, read that platform's node and
+2. If evaluating a batch of candidates, apply [scoring](engine/scoring.md) first — only the
+   top-scoring topics proceed to generation. Consult [artists.md](engine/artists.md) for the
+   exclusivity check. Confirm uniqueness against the Found News spreadsheet.
+3. Read [brand voice](voice/brand-voice.md) for core personality
+4. Read [hooks](engine/hooks.md) and select the best hook formula for the topic
+5. Read [repurpose](engine/repurpose.md) for the production chain order
+6. Write for the *first* platform in the chain (usually [LinkedIn](platforms/linkedin.md))
+7. For each subsequent platform, read that platform's node and
    [platform tone](voice/platform-tone.md) to adapt. Don't just reformat, *rethink* the
    angle, structure, hook, and format for that specific platform
-7. Apply [scheduling](engine/scheduling.md) rules for timing and frequency
-8. Check every post against [humanizer](voice/humanizer.md) and remove any AI patterns
-9. Output one native post per platform, each post ready to publish
+8. Apply [scheduling](engine/scheduling.md) rules for timing and frequency
+9. Check every post against [humanizer](voice/humanizer.md) and remove any AI patterns
+10. Output one native post per platform, each post ready to publish
 
 ***Critical rule***: The output is *not* three copies of the same text
 reformatted for each platform. It's three pieces that each *think*
