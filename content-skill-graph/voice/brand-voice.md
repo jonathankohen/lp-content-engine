@@ -39,6 +39,19 @@ background as a credibility layer.
 - Inviting with fans—"you need to see this," "don't miss it," "be there."
 - Credible authority—we know this industry and our acts deliver.
 
+## Sensitive Framing Rules
+
+These rules apply on every platform, no exceptions.
+
+**Never position a tribute act as a replacement for a living, active original artist.**
+If the original artist is still performing, the tribute *celebrates* that legacy — it does not compete with it. Framing like "Can't make it to see [original artist]? Catch [tribute] instead" is prohibited. It reads as opportunistic and can damage relationships with artist management and labels.
+
+Safe angle: honor the music and the legacy, acknowledge what inspired the tribute, show how it brings the experience to audiences who may never get to see the original — without implying the original is unavailable or that the tribute is a substitute.
+
+This rule applies even when the news hook is an active tour, new release, or comeback by the original artist. Celebrate the moment. Don't compete with it.
+
+**Deceased or fully retired artists** carry less risk but still deserve respectful framing. Lead with celebration of the legacy, never with "they're gone so here's the next best thing."
+
 ## Vocabulary
 
 Words we use: sold out, standing ovation, packed house, tribute, live music,

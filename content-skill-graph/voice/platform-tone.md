@@ -14,6 +14,8 @@ AI writing patterns to strip from every post regardless of platform.
 - Replace casual enthusiasm with confident authority.
 - Example: "We just wrapped our third sold-out run with The Dolly Show this
   season. Here's why talent buyers keep coming back to this act."
+- **LP acts only.** LinkedIn posts must only cover acts Love Productions represents — tribute acts and the shows we book. Never post about original artist tours, milestones, or news on LinkedIn; that content belongs on Instagram and Facebook only. If the topic is `original_artist_news`, skip LinkedIn entirely.
+- **Conservative by default.** When in doubt, don't post on LinkedIn. A missed opportunity is better than a post that looks like we're riding another artist's momentum for our own benefit.
 
 ## Instagram
 
