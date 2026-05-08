@@ -36,10 +36,13 @@ All posts have the same goal: to get buyers to book our acts. Please make every 
 
 "On this day in 1978, Dolly Parton released (song)" (make sure to give source in link)
 
-- Best on: Instagram, Facebook
+- Best on: Instagram, Facebook (never LinkedIn)
+- Sourced from pre-1990 archival materials: archive.org, old Rolling Stone, Billboard, NME, Guitar World
+- Always cite the archival source with a link
 - Examples:
-	- "Did you know that Dolly Parton (lesser-known fact)? ..."
-	- "When writing (song), (artist) said their inspiration was..."
+	- "On this day in 1973, Dolly Parton recorded 'I Will Always Love You' in a single take. Source: [archive link]"
+	- "Did you know that in 1969, Jimmy Buffett performed at a coffee house in Nashville before anyone knew his name? Full story: [archive link]"
+	- "When writing (song), (artist) said their inspiration was... [source: 1977 Rolling Stone interview]"
 
 
 ## Rules

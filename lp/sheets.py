@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 
-from .config import SHEETS_ID
+from .config import SHEETS_ID, TOUR_DATES_SHEET_ID
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,40 @@ def mark_show_used(show: dict, lpc_key: str, dry_run: bool = False) -> None:
         today,
     ])
     log.info("Recorded show in Sheets: %s", lpc_key)
+
+
+def lookup_ticket_url(show_title: str, show_date: str) -> str | None:
+    """Look up the ticket URL for a show in the tour dates sheet (artist tab + date match)."""
+    if not TOUR_DATES_SHEET_ID:
+        return None
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not creds_path:
+        return None
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(TOUR_DATES_SHEET_ID)
+
+        title_lower = show_title.lower()
+        target_ws = None
+        for ws in spreadsheet.worksheets():
+            tab = ws.title.lower()
+            if tab in title_lower or title_lower.startswith(tab):
+                target_ws = ws
+                break
+        if not target_ws:
+            log.debug("No tour dates tab found for '%s'", show_title)
+            return None
+
+        target_str = datetime.strptime(show_date, "%Y-%m-%d").strftime("%m/%d/%y")
+        for row in target_ws.get_all_values()[1:]:
+            if row and row[0].strip() == target_str:
+                url = row[5].strip() if len(row) > 5 else ""
+                return url or None
+    except Exception as exc:
+        log.debug("Ticket URL lookup failed for '%s': %s", show_title, exc)
+    return None
 
 
 def mark_topics_used(topics: list[dict], dry_run: bool = False) -> None:

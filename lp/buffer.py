@@ -180,36 +180,74 @@ def get_occupied_slots() -> set[str]:
     """Return date strings (YYYY-MM-DD) that already have a scheduled post with a dueAt set."""
     org_id = _get_org_id()
     occupied: set[str] = set()
-    cursor = None
-    while True:
-        input_args: dict = {"organizationId": org_id, "status": ["draft", "scheduled"]}
-        if cursor:
-            input_args["after"] = cursor
-        data = _buffer_gql(
-            """
-            query GetDrafts($input: PostsInput!) {
-              posts(input: $input) {
-                edges { node { id dueAt } }
-                pageInfo { hasNextPage endCursor }
+    data = _buffer_gql(
+        """
+        query GetDrafts($input: PostsInput!) {
+          posts(input: $input) {
+            edges { node { id dueAt } }
+          }
+        }
+        """,
+        {"input": {"organizationId": org_id}},
+    )
+    for edge in data.get("data", {}).get("posts", {}).get("edges", []):
+        due = (edge.get("node") or {}).get("dueAt")
+        if due:
+            try:
+                dt = datetime.fromisoformat(due.replace("Z", "+00:00"))
+                occupied.add(dt.date().isoformat())
+            except Exception:
+                pass
+    return occupied
+
+
+def fetch_top_performers(n: int = 3) -> list[dict]:
+    """Fetch recent posts with engagement data; return top n by engagement score."""
+    try:
+        org_id = _get_org_id()
+    except RuntimeError:
+        return []
+    data = _buffer_gql(
+        """
+        query GetPosts($input: PostsInput!) {
+          posts(input: $input) {
+            edges {
+              node {
+                id
+                text
+                serviceType
+                statistics {
+                  reactions
+                  comments
+                  reposts
+                  clicks
+                }
               }
             }
-            """,
-            {"input": input_args},
+          }
+        }
+        """,
+        {"input": {"organizationId": org_id}},
+    )
+    posts = []
+    for edge in data.get("data", {}).get("posts", {}).get("edges", []):
+        node = edge.get("node") or {}
+        stats = node.get("statistics") or {}
+        score = (
+            (stats.get("reactions") or 0)
+            + (stats.get("comments") or 0)
+            + (stats.get("reposts") or 0)
+            + (stats.get("clicks") or 0)
         )
-        posts_data = data.get("data", {}).get("posts", {})
-        for edge in posts_data.get("edges", []):
-            due = (edge.get("node") or {}).get("dueAt")
-            if due:
-                try:
-                    dt = datetime.fromisoformat(due.replace("Z", "+00:00"))
-                    occupied.add(dt.date().isoformat())
-                except Exception:
-                    pass
-        page_info = posts_data.get("pageInfo", {})
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info.get("endCursor")
-    return occupied
+        if score > 0:
+            posts.append({
+                "id": node.get("id", ""),
+                "text": node.get("text", ""),
+                "serviceType": node.get("serviceType", ""),
+                "engagement_score": score,
+            })
+    posts.sort(key=lambda p: p["engagement_score"], reverse=True)
+    return posts[:n]
 
 
 # ── Expired draft cleanup ─────────────────────────────────────────────────────
@@ -265,7 +303,7 @@ def purge_expired_show_drafts(dry_run: bool = False) -> None:
           posts(input: $input) { edges { node { id text } } }
         }
         """,
-        {"input": {"organizationId": org_id, "status": ["draft"]}},
+        {"input": {"organizationId": org_id}},
     )
     posts = [
         e["node"]

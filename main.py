@@ -27,19 +27,22 @@ from lp import config
 from lp.airtable import fetch_airtable_artists, fetch_upcoming_shows, show_to_topic
 from lp.ai import (
     filter_new_topics,
+    format_performance_context,
     generate_posts,
     score_and_rank_topics,
     search_artist_news,
+    search_historical_facts,
 )
 from lp.buffer import (
     discover_buffer_profiles,
+    fetch_top_performers,
     get_occupied_slots,
     post_draft_to_buffer,
     purge_expired_show_drafts,
     test_buffer,
 )
 from lp.loaders import load_artist_mappings, load_skill_graph
-from lp.sheets import mark_show_used, mark_topics_used, read_used_topics
+from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
 
 _EASTERN = ZoneInfo("America/New_York")
 _POST_HOUR = 10  # 10am ET
@@ -123,14 +126,23 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
 
     all_new_topics: list[dict] = []
 
+    top_performers = fetch_top_performers(n=3)
+    perf_context = format_performance_context(top_performers)
+    if top_performers:
+        log.info("Loaded %d top-performing post(s) as style context", len(top_performers))
+
     # ── Show announcements from Airtable calendar ─────────────────────────────
     for show in fetch_upcoming_shows():
         topic = show_to_topic(show, mappings)
         if topic["url"] in used:
             log.info("Show already drafted: %s", topic["headline"])
             continue
+        ticket_url = lookup_ticket_url(show["show_title"], show["show_date"])
+        if ticket_url:
+            topic["ticket_url"] = ticket_url
+            log.info("  Ticket URL found: %s", ticket_url)
         log.info("Generating show announcement: %s", topic["headline"])
-        posts = generate_posts(topic, skill_graph)
+        posts = generate_posts(topic, skill_graph, perf_context)
         if not posts:
             continue
         for platform in ("linkedin", "instagram", "facebook"):
@@ -218,14 +230,15 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 slot.strftime("%a %b %d"),
             )
 
-            posts = generate_posts(topic, skill_graph)
+            posts = generate_posts(topic, skill_graph, perf_context)
             if not posts:
                 continue
 
-            is_original_artist = topic.get("hook_type") == "original_artist_news"
-            platforms = ("instagram", "facebook") if is_original_artist else ("linkedin", "instagram", "facebook")
-            if is_original_artist:
-                log.info("  Original artist news — skipping LinkedIn for '%s'", headline)
+            hook = topic.get("hook_type", "")
+            is_ig_fb_only = hook in ("original_artist_news", "historical_fact")
+            platforms = ("instagram", "facebook") if is_ig_fb_only else ("linkedin", "instagram", "facebook")
+            if is_ig_fb_only:
+                log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
             for platform in platforms:
                 text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
                 if not text:
@@ -254,6 +267,63 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                     log.warning("  %s draft FAILED — see error above", platform)
 
             scheduled_topics.append(topic)
+
+        # Phase 4: fill remaining slots with historical facts (Instagram + Facebook only)
+        remaining_slots = week_slots[len(scheduled_topics):]
+        if remaining_slots and not single_artist:
+            scheduled_acts = {t.get("_act", "") for t in scheduled_topics}
+            history_candidates = [
+                a for a in artists
+                if mappings.get(a["name"]) and a["name"] not in scheduled_acts
+            ]
+            for slot, artist in zip(remaining_slots, history_candidates):
+                original = mappings[artist["name"]]
+                log.info("--- Historical fact: %s [%s]", artist["name"], artist["priority"])
+                facts = search_historical_facts(artist["name"], original, slot)
+                new_facts = filter_new_topics(facts, used)
+                if not new_facts:
+                    log.info("No historical fact found for %s", artist["name"])
+                    continue
+                fact = new_facts[0]
+                fact["_priority"] = artist["priority"]
+                fact["_act"] = artist["name"]
+                key = fact.get("url", "").strip() or fact.get("headline", "").strip()
+                used.add(key)
+                log.info(
+                    "Generating historical fact: %s (slot=%s)",
+                    fact.get("headline", "")[:80],
+                    slot.strftime("%a %b %d"),
+                )
+                posts = generate_posts(fact, skill_graph, perf_context)
+                if not posts:
+                    continue
+                for platform in ("instagram", "facebook"):
+                    text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
+                    if not text:
+                        log.warning("No %s post for historical fact '%s'", platform, fact.get("headline", "")[:60])
+                        continue
+                    profile_id = buffer_profiles.get(platform, "")
+                    if not profile_id and not dry_run:
+                        log.warning("No Buffer profile for %s — skipping", platform)
+                        continue
+                    ok = post_draft_to_buffer(
+                        text,
+                        profile_id,
+                        platform=platform,
+                        dry_run=dry_run,
+                        scheduled_at=slot,
+                        image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+                    )
+                    if ok:
+                        log.info(
+                            "  %s historical fact scheduled %s (%d chars)",
+                            platform,
+                            slot.strftime("%a %b %d %I:%M%p %Z"),
+                            len(text),
+                        )
+                    else:
+                        log.warning("  %s draft FAILED — see error above", platform)
+                scheduled_topics.append(fact)
 
         all_new_topics.extend(scheduled_topics)
         mark_topics_used(scheduled_topics, dry_run=dry_run)
@@ -290,6 +360,11 @@ if __name__ == "__main__":
         help="List Buffer channels and post a test draft to each",
     )
     parser.add_argument(
+        "--test-analytics",
+        action="store_true",
+        help="Print top-performing Buffer posts with engagement scores and exit",
+    )
+    parser.add_argument(
         "--artist",
         metavar="NAME",
         help="Run the full pipeline for a single artist (skips Airtable fetch)",
@@ -323,6 +398,21 @@ if __name__ == "__main__":
     if args.test_buffer:
         config.load_env()
         test_buffer()
+        sys.exit(0)
+
+    if args.test_analytics:
+        config.load_env()
+        posts = fetch_top_performers(n=10)
+        if not posts:
+            print("No posts with engagement data found (analytics may not be available yet).")
+        else:
+            print(f"Top {len(posts)} post(s) by engagement:\n")
+            for p in posts:
+                platform = (p.get("serviceType") or "unknown").capitalize()
+                score = p.get("engagement_score", 0)
+                text = (p.get("text") or "")[:120]
+                print(f"  [{platform}] score={score}  id={p.get('id', '')}")
+                print(f"  {text!r}\n")
         sys.exit(0)
 
     main(dry_run=args.dry_run, single_artist=args.artist or "")

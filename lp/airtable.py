@@ -136,4 +136,5 @@ def show_to_topic(show: dict, mappings: dict) -> dict:
         "url":             f"lpc_{show['lpc_number']}",
         "summary":         f"{title} is performing at {venue} on {date_formatted}. Confirmed booking.",
         "hook_type":       "upcoming_show",
+        "ticket_url":      None,
     }

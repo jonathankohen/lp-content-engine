@@ -171,24 +171,110 @@ def filter_new_topics(found: list[dict], used: set[str]) -> list[dict]:
     return new
 
 
-def generate_posts(topic: dict, skill_graph: str) -> dict | None:
+def search_historical_facts(tribute: str, original: str, slot_date: datetime) -> list[dict]:
+    """Search for a pre-1990 historical fact about the original artist for a given date."""
+    if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(tribute):
+        return []
+
+    month_day = f"{slot_date.strftime('%B')} {slot_date.day}"
+    prompt = (
+        f"Search for an interesting historical fact about '{original}' to use in a social media post. "
+        f"Ideally find something that happened on {month_day} in any year before 1990 "
+        f"(e.g., a recording session, album release, chart milestone, interview quote, or news story). "
+        f"Prioritize archival sources: archive.org, old Rolling Stone, Billboard, NME, "
+        f"Melody Maker, Guitar World, Cashbox magazine. "
+        f"If no compelling {month_day} fact exists, return the single most interesting "
+        f"lesser-known fact about {original} from before 1990. "
+        f"Return ONLY a JSON array with at most one object (or [] if nothing compelling is found). "
+        f"The object must have exactly these keys: "
+        f"headline (a concise 'On this day in [year], ...' style headline if date-specific, "
+        f"otherwise a compelling fact headline), "
+        f"url (most direct archival source URL available), "
+        f"summary (1-2 sentences about the fact), "
+        f"hook_type (always the string 'historical_fact'), "
+        f"artist (always '{tribute}'). "
+        f"Do not include any text outside the JSON array."
+    )
+
+    config.claude_throttle()
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    try:
+        raw = client.messages.with_raw_response.create(
+            model=config.SEARCH_MODEL,
+            max_tokens=config.MAX_TOKENS,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resp = raw.parse()
+        config.claude_call_done(dict(raw.headers))
+        config.track_cost(resp, config.SEARCH_MODEL)
+    except Exception as exc:
+        log.error("Historical fact search error for %s: %s", tribute, exc)
+        return []
+
+    text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
+    text = re.sub(r"```(?:json)?\s*", "", text)
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        items = json.loads(match.group())
+    except json.JSONDecodeError:
+        return []
+
+    for item in items:
+        item.setdefault("original_artist", original)
+    log.info("Found %d historical fact(s) for %s", len(items), tribute)
+    return items[:1]
+
+
+def format_performance_context(top_posts: list[dict]) -> str:
+    """Format top-performing Buffer posts as style examples for Claude."""
+    if not top_posts:
+        return ""
+    lines = ["Recent posts that performed well (study what made them effective):"]
+    for p in top_posts:
+        platform = (p.get("serviceType") or "").capitalize() or "Post"
+        score = p.get("engagement_score", 0)
+        text = (p.get("text") or "")[:200]
+        lines.append(f"\n[{platform}] (engagement: {score})\n\"{text}\"")
+    return "\n".join(lines)
+
+
+def generate_posts(topic: dict, skill_graph: str, performance_context: str = "") -> dict | None:
     """Generate LinkedIn, Instagram, and Facebook posts for a topic."""
     if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
         topic.get("headline", "")
     ):
         return None
 
+    ticket_url = topic.get("ticket_url") or ""
+    ticket_line = (
+        f"Ticket URL: {ticket_url}\n"
+        if ticket_url
+        else "Ticket URL: not available\n"
+    )
+    perf_section = (
+        f"\n{performance_context}\n"
+        if performance_context
+        else ""
+    )
     user_prompt = (
         "Generate social media content for Love Productions based on this news topic:\n\n"
         f"Tribute Act: {topic.get('artist', '')}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
         f"Headline: {topic.get('headline', '')}\n"
         f"URL: {topic.get('url', '')}\n"
+        f"{ticket_line}"
         f"Summary: {topic.get('summary', '')}\n"
-        f"Suggested Hook Type: {topic.get('hook_type', '')}\n\n"
+        f"Suggested Hook Type: {topic.get('hook_type', '')}\n"
+        f"{perf_section}\n"
         "Follow the content skill graph instructions exactly. Write all three platform posts "
         "in the repurposing chain order (LinkedIn first, then Instagram, then Facebook). "
         "Each post must think about the topic differently — not just reformatted.\n\n"
+        "If a Ticket URL is provided, include it prominently in every platform post as the "
+        "call-to-action link (e.g., 'Get tickets: <url>'). If not available, do not invent "
+        "a link — omit ticket link entirely.\n\n"
         "Include the source URL in every post. For LinkedIn and Facebook, weave it naturally "
         "into the post body (e.g. 'Full story here: <url>' or 'Read more: <url>'). "
         "For Instagram, place it at the end of the caption before the hashtags.\n\n"

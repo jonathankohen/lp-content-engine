@@ -24,6 +24,7 @@ SHEETS_ID         = os.environ.get("FOUND_NEWS_STORIES_SHEETS_ID", "")
 
 AIRTABLE_CALENDAR_BASE_ID  = os.environ.get("AIRTABLE_CALENDAR_BASE_ID",  "appXLETHThc0p5MOz")
 AIRTABLE_CALENDAR_TABLE_ID = os.environ.get("AIRTABLE_CALENDAR_TABLE_ID", "tblK2LMog1WUEv3j0")
+TOUR_DATES_SHEET_ID        = os.environ.get("TOUR_DATES_SHEET_ID", "")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
