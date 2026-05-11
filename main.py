@@ -408,7 +408,7 @@ if __name__ == "__main__":
         else:
             print(f"Top {len(posts)} post(s) by engagement:\n")
             for p in posts:
-                platform = (p.get("serviceType") or "unknown").capitalize()
+                platform = p.get("platform") or (p.get("serviceType") or "unknown").capitalize()
                 score = p.get("engagement_score", 0)
                 text = (p.get("text") or "")[:120]
                 print(f"  [{platform}] score={score}  id={p.get('id', '')}")

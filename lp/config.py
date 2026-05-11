@@ -26,6 +26,8 @@ AIRTABLE_CALENDAR_BASE_ID = os.environ.get("AIRTABLE_CALENDAR_BASE_ID", "")
 AIRTABLE_CALENDAR_TABLE_ID = os.environ.get("AIRTABLE_CALENDAR_TABLE_ID", "")
 TOUR_DATES_SHEET_ID = os.environ.get("TOUR_DATES_SHEET_ID", "")
 
+META_PAGE_ACCESS_TOKEN = os.environ.get("META_PAGE_ACCESS_TOKEN", "")
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]

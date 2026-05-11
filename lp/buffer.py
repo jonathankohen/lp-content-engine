@@ -202,12 +202,9 @@ def get_occupied_slots() -> set[str]:
 
 
 def fetch_top_performers(n: int = 3) -> list[dict]:
-    """Fetch recent posts with engagement data; return top n by engagement score.
-
-    Buffer's `statistics` field is paywalled (Analyze plan). On free accounts
-    this always returns [] — the self-learning feature is silently disabled.
-    """
-    return []
+    """Return top n posts by engagement via Meta Graph API (Facebook + Instagram)."""
+    from .meta import fetch_meta_top_performers
+    return fetch_meta_top_performers(n=n)
 
 
 # ── Expired draft cleanup ─────────────────────────────────────────────────────

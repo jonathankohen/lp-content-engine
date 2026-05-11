@@ -234,7 +234,7 @@ def format_performance_context(top_posts: list[dict]) -> str:
         return ""
     lines = ["Recent posts that performed well (study what made them effective):"]
     for p in top_posts:
-        platform = (p.get("serviceType") or "").capitalize() or "Post"
+        platform = p.get("platform") or (p.get("serviceType") or "").capitalize() or "Post"
         score = p.get("engagement_score", 0)
         text = (p.get("text") or "")[:200]
         lines.append(f"\n[{platform}] (engagement: {score})\n\"{text}\"")
