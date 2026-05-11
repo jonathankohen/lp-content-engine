@@ -202,52 +202,12 @@ def get_occupied_slots() -> set[str]:
 
 
 def fetch_top_performers(n: int = 3) -> list[dict]:
-    """Fetch recent posts with engagement data; return top n by engagement score."""
-    try:
-        org_id = _get_org_id()
-    except RuntimeError:
-        return []
-    data = _buffer_gql(
-        """
-        query GetPosts($input: PostsInput!) {
-          posts(input: $input) {
-            edges {
-              node {
-                id
-                text
-                serviceType
-                statistics {
-                  reactions
-                  comments
-                  reposts
-                  clicks
-                }
-              }
-            }
-          }
-        }
-        """,
-        {"input": {"organizationId": org_id}},
-    )
-    posts = []
-    for edge in data.get("data", {}).get("posts", {}).get("edges", []):
-        node = edge.get("node") or {}
-        stats = node.get("statistics") or {}
-        score = (
-            (stats.get("reactions") or 0)
-            + (stats.get("comments") or 0)
-            + (stats.get("reposts") or 0)
-            + (stats.get("clicks") or 0)
-        )
-        if score > 0:
-            posts.append({
-                "id": node.get("id", ""),
-                "text": node.get("text", ""),
-                "serviceType": node.get("serviceType", ""),
-                "engagement_score": score,
-            })
-    posts.sort(key=lambda p: p["engagement_score"], reverse=True)
-    return posts[:n]
+    """Fetch recent posts with engagement data; return top n by engagement score.
+
+    Buffer's `statistics` field is paywalled (Analyze plan). On free accounts
+    this always returns [] — the self-learning feature is silently disabled.
+    """
+    return []
 
 
 # ── Expired draft cleanup ─────────────────────────────────────────────────────

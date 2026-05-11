@@ -15,42 +15,42 @@ log = logging.getLogger(__name__)
 # ── API keys & IDs ────────────────────────────────────────────────────────────
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-BUFFER_API_KEY    = os.environ.get("BUFFER_API_KEY", "")
-AIRTABLE_API_KEY  = os.environ.get("AIRTABLE_API_KEY", "")
+BUFFER_API_KEY = os.environ.get("BUFFER_API_KEY", "")
+AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY", "")
 
-AIRTABLE_BASE_ID  = os.environ.get("AIRTABLE_BASE_ID",     "appMMwX47V1g2Sv5u")
-AIRTABLE_TABLE_ID = os.environ.get("AIRTABLE_ARTIST_TABLE", "tbloEhiPP4kyTTVDb")
-SHEETS_ID         = os.environ.get("FOUND_NEWS_STORIES_SHEETS_ID", "")
+AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "")
+AIRTABLE_TABLE_ID = os.environ.get("AIRTABLE_ARTIST_TABLE", "")
+SHEETS_ID = os.environ.get("FOUND_NEWS_STORIES_SHEETS_ID", "")
 
-AIRTABLE_CALENDAR_BASE_ID  = os.environ.get("AIRTABLE_CALENDAR_BASE_ID",  "appXLETHThc0p5MOz")
-AIRTABLE_CALENDAR_TABLE_ID = os.environ.get("AIRTABLE_CALENDAR_TABLE_ID", "tblK2LMog1WUEv3j0")
-TOUR_DATES_SHEET_ID        = os.environ.get("TOUR_DATES_SHEET_ID", "")
+AIRTABLE_CALENDAR_BASE_ID = os.environ.get("AIRTABLE_CALENDAR_BASE_ID", "")
+AIRTABLE_CALENDAR_TABLE_ID = os.environ.get("AIRTABLE_CALENDAR_TABLE_ID", "")
+TOUR_DATES_SHEET_ID = os.environ.get("TOUR_DATES_SHEET_ID", "")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]
 SHOW_DAYS_AHEAD = 7
 
-SEARCH_MODEL  = "claude-haiku-4-5"
+SEARCH_MODEL = "claude-haiku-4-5"
 CONTENT_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS    = 4096
+MAX_TOKENS = 4096
 
-BUFFER_API_URL  = "https://api.buffer.com"
+BUFFER_API_URL = "https://api.buffer.com"
 SKILL_GRAPH_DIR = Path(__file__).parent.parent / "content-skill-graph"
 _IG_PLACEHOLDER = "https://www.loveproductions.com/wp-content/uploads/2022/03/LPI_logo_RGB_Red_BLK.png"
 
 # ── Cost tracking ─────────────────────────────────────────────────────────────
 
 COST_CAP_USD = float(os.environ.get("COST_CAP_USD", "5.00"))
-_HAIKU_INPUT  = 1.00 / 1_000_000
+_HAIKU_INPUT = 1.00 / 1_000_000
 _HAIKU_OUTPUT = 5.00 / 1_000_000
-_SONNET_INPUT  = 3.00 / 1_000_000
+_SONNET_INPUT = 3.00 / 1_000_000
 _SONNET_OUTPUT = 15.00 / 1_000_000
-_SEARCH_COST   = 0.01
+_SEARCH_COST = 0.01
 
 estimated_cost_usd = 0.0
-claude_call_count  = 0
-CLAUDE_CALL_LIMIT  = 50
+claude_call_count = 0
+CLAUDE_CALL_LIMIT = 50
 
 
 def track_cost(resp, model: str) -> None:
@@ -83,7 +83,7 @@ def under_cost_cap(label: str) -> bool:
 
 # ── Claude rate-limit throttle ────────────────────────────────────────────────
 
-_THROTTLE_FILE   = "/tmp/lp_content_throttle.txt"
+_THROTTLE_FILE = "/tmp/lp_content_throttle.txt"
 _THROTTLE_BUFFER = 2
 
 
@@ -146,8 +146,8 @@ def load_env() -> None:
         k
         for k, v in {
             "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-            "BUFFER_API_KEY":    BUFFER_API_KEY,
-            "AIRTABLE_API_KEY":  AIRTABLE_API_KEY,
+            "BUFFER_API_KEY": BUFFER_API_KEY,
+            "AIRTABLE_API_KEY": AIRTABLE_API_KEY,
             "FOUND_NEWS_STORIES_SHEETS_ID": SHEETS_ID,
         }.items()
         if not v

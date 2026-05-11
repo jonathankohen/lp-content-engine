@@ -106,7 +106,7 @@ python clean_up.py --purge-expired --apply  # expired show drafts only
 
 **Ticket links in show announcements.** `lookup_ticket_url()` in `lp/sheets.py` looks up a ticket URL in the tour dates Google Sheet (`TOUR_DATES_SHEET_ID`) produced by the `love-automations` repo. The sheet has per-artist tabs named by display name (e.g., "Arrival From Sweden" for "Arrival From Sweden: The Music of ABBA") with columns: Date (MM/DD/YY), Venue, City, Region, Country, Ticket URL, Source. Matching is by tab name (substring of show_title, case-insensitive) + date. If no match, the post is generated without a ticket link.
 
-**Self-learning via performance context.** `fetch_top_performers()` in `lp/buffer.py` queries Buffer for recent posts with engagement data (reactions + comments + reposts + clicks). `format_performance_context()` in `lp/ai.py` formats the top 3 as style examples that are injected into every `generate_posts()` call. Returns `[]` / empty string gracefully if Buffer analytics aren't available. Use `--test-analytics` to inspect what's being loaded.
+**Self-learning via performance context.** `fetch_top_performers()` in `lp/buffer.py` is disabled — Buffer's `statistics` field is paywalled (Analyze plan) and raises a GraphQL validation error on free accounts. The function returns `[]` unconditionally. `format_performance_context()` in `lp/ai.py` formats the top 3 as style examples injected into `generate_posts()`, but produces an empty string when the list is empty. If Buffer ever upgrades, re-implement using a schema introspection first to find the correct field names.
 
 ## Environment variables (`.env`)
 
