@@ -251,9 +251,9 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     url = topic.get("url", "")
     url_line = f"URL: {url}\n" if url else ""
     source_url_instruction = (
-        "Include the source URL in every post. For LinkedIn and Facebook, weave it naturally "
+        "Include the source URL in the LinkedIn and Facebook posts only — weave it naturally "
         "into the post body (e.g. 'Full story here: <url>' or 'Read more: <url>'). "
-        "For Instagram, place it at the end of the caption before the hashtags.\n\n"
+        "Do NOT include any raw URL in the Instagram post.\n\n"
     ) if url else ""
     ticket_url = topic.get("ticket_url") or ""
     ticket_line = (
@@ -279,10 +279,9 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "Follow the content skill graph instructions exactly. Write all three platform posts "
         "in the repurposing chain order (LinkedIn first, then Instagram, then Facebook). "
         "Each post must think about the topic differently — not just reformatted.\n\n"
-        "If a Ticket URL is provided, include it prominently in the Instagram and Facebook posts "
+        "If a Ticket URL is provided, include it prominently in the Facebook post only "
         "as the call-to-action link (e.g., 'Get tickets: <url>'). Do NOT include the ticket link "
-        "in the LinkedIn post — LinkedIn is for industry buyers, not ticket sales. If not available, "
-        "do not invent a link — omit ticket link entirely.\n\n"
+        "in the LinkedIn or Instagram posts. If not available, do not invent a link — omit entirely.\n\n"
         f"{source_url_instruction}"
         "IMPORTANT: If the source article references a specific show date, venue, or performance "
         "that has already happened, do not mention that specific date or venue in any post. "

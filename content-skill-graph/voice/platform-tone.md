@@ -7,7 +7,7 @@ AI writing patterns to strip from every post regardless of platform.
 ## LinkedIn
 
 - Most professional version of the voice.
-- Buyer-first framing — speak to talent buyers, bookers, and industry peers.
+- Buyer-first framing — write for talent buyers, bookers, and industry peers, but never use the word "buyer" or "talent buyer" in the post itself. Address them as "you", or use neutral phrases like "those unfamiliar with the act" or "anyone who hasn't seen them live." They know who they are.
 - Lead with results: sold-out shows, award wins, re-bookings, patron reviews.
 - "I" and "we" both work here. Narrative structure with a business insight.
 - Longer sentences OK. More context and proof.

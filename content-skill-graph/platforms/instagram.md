@@ -21,8 +21,7 @@
   visible in the photo.
 - Hashtags: 5-10 relevant ones at the end. Use genre, artist name, city,
   and venue tags for discovery.
-- Always include a CTA: "Link in bio" (points to loveproductions.com) / "DM us to book" /
-  "Tag someone who needs to see this show."
+- Always include a CTA. Use "link in bio for more" (points to our Linktree). Secondary options: "DM us" / "Email info@loveproductions.com" / "Tag someone who needs to see this show." Never include a raw URL in the caption.
 
 ## Carousel Design Rules
 
@@ -30,7 +29,7 @@
 - One idea per slide. Max 30 words per slide.
 - Consistent color scheme across all slides (Love Productions brand colors).
 - Slide 1: Big bold text, no more than 8 words.
-- Last slide: Ticket link or booking contact with handle.
+- Last slide: "Link in bio" or booking contact (info@loveproductions.com) with handle. No raw URLs.
 
 ## Posting Strategy
 
