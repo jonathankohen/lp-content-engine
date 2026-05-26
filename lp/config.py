@@ -27,6 +27,7 @@ AIRTABLE_CALENDAR_TABLE_ID = os.environ.get("AIRTABLE_CALENDAR_TABLE_ID", "")
 TOUR_DATES_SHEET_ID = os.environ.get("TOUR_DATES_SHEET_ID", "")
 
 META_PAGE_ACCESS_TOKEN = os.environ.get("META_PAGE_ACCESS_TOKEN", "")
+LINKEDIN_ANALYTICS_CSV = os.environ.get("LINKEDIN_ANALYTICS_CSV", "")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,16 @@ def load_env() -> None:
         tmp.flush()
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
         log.info("Wrote Google credentials from env to %s", tmp.name)
+
+    li_content = os.environ.get("LINKEDIN_ANALYTICS_CSV_CONTENT", "")
+    if li_content and not os.environ.get("LINKEDIN_ANALYTICS_CSV"):
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8")
+        tmp.write(li_content)
+        tmp.flush()
+        os.environ["LINKEDIN_ANALYTICS_CSV"] = tmp.name
+        global LINKEDIN_ANALYTICS_CSV
+        LINKEDIN_ANALYTICS_CSV = tmp.name
+        log.info("Wrote LinkedIn analytics CSV from env to %s", tmp.name)
 
     missing = [
         k

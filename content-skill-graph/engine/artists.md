@@ -14,7 +14,7 @@ Leave the Original Artist cell blank if there's no applicable original artist.
 
 | Tribute Act | Original Artist |
 |-------------|-----------------|
-| Arrival From Sweden: The Music of ABBA | ABBA |
+| Arrival from Sweden: The Music of ABBA | ABBA |
 | The Dolly Show | Dolly Parton |
 | Kyle Martin's Piano Man | Billy Joel |
 | The Rocket Man Show | Elton John |

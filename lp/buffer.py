@@ -144,7 +144,7 @@ def post_draft_to_buffer(
     elif platform == "instagram":
         post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
         if image:
-            post_input["assets"] = {"images": [{"url": image}]}
+            post_input["assets"] = {"image": {"url": image}}
     data = _buffer_gql(
         """
         mutation CreateDraft($input: CreatePostInput!) {
@@ -202,9 +202,12 @@ def get_occupied_slots() -> set[str]:
 
 
 def fetch_top_performers(n: int = 3) -> list[dict]:
-    """Return top n posts by engagement via Meta Graph API (Facebook + Instagram)."""
+    """Return top n posts by engagement across Meta (Facebook + Instagram) and LinkedIn."""
     from .meta import fetch_meta_top_performers
-    return fetch_meta_top_performers(n=n)
+    from .linkedin import fetch_linkedin_top_performers
+    posts = fetch_meta_top_performers(n=n) + fetch_linkedin_top_performers(n=n)
+    posts.sort(key=lambda p: p["engagement_score"], reverse=True)
+    return posts[:n]
 
 
 # ── Expired draft cleanup ─────────────────────────────────────────────────────
@@ -226,8 +229,6 @@ def _extract_earliest_date(text: str) -> datetime | None:
                 dt = datetime.strptime(raw.strip(), fmt)
                 if dt.year == 1900:
                     dt = dt.replace(year=today.year)
-                    if dt.date() < today:
-                        dt = dt.replace(year=today.year + 1)
                 date = dt.date()
                 if earliest is None or date < earliest:
                     earliest = date

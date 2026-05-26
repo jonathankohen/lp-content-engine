@@ -41,6 +41,7 @@ from lp.buffer import (
     purge_expired_show_drafts,
     test_buffer,
 )
+from lp.airtable import fetch_venue_from_contracts
 from lp.loaders import load_artist_mappings, load_skill_graph
 from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
 
@@ -49,16 +50,14 @@ _POST_HOUR = 10  # 10am ET
 
 
 def get_week_slots() -> list[datetime]:
-    """Return the next 7 days' 10am ET slots from now (always a full week)."""
-    now = datetime.now(_EASTERN)
-    slots = []
-    day = now.date()
-    while len(slots) < 7:
-        slot = datetime(day.year, day.month, day.day, _POST_HOUR, 0, 0, tzinfo=_EASTERN)
-        if slot > now:
-            slots.append(slot)
-        day += timedelta(days=1)
-    return slots
+    """Return 7 slots for Tue–Mon of the current content week, at 10am ET."""
+    today = datetime.now(_EASTERN).date()
+    days_until_tuesday = (1 - today.weekday()) % 7 or 7
+    tuesday = today + timedelta(days=days_until_tuesday)
+    return [
+        datetime(tuesday.year, tuesday.month, tuesday.day, _POST_HOUR, 0, 0, tzinfo=_EASTERN) + timedelta(days=i)
+        for i in range(7)
+    ]
 
 
 def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
@@ -131,20 +130,42 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
     if top_performers:
         log.info("Loaded %d top-performing post(s) as style context", len(top_performers))
 
+    # ── Compute week slots before show announcements so shows claim the earliest ones ──
+    all_slots = get_week_slots()
+    occupied = (
+        get_occupied_slots() if not dry_run else set()
+    )
+    week_slots = [s for s in all_slots if s.date().isoformat() not in occupied]
+    log.info(
+        "Week slots: %d available, %d already occupied in Buffer",
+        len(week_slots),
+        len(all_slots) - len(week_slots),
+    )
+    show_slots_used = 0
+
     # ── Show announcements from Airtable calendar ─────────────────────────────
     for show in fetch_upcoming_shows():
         topic = show_to_topic(show, mappings)
-        if topic["url"] in used:
+        if topic["sheet_key"] in used:
             log.info("Show already drafted: %s", topic["headline"])
             continue
-        ticket_url = lookup_ticket_url(show["show_title"], show["show_date"])
+        ticket_url, venue_name = lookup_ticket_url(show["show_title"], show["show_date"])
+        if not venue_name:
+            venue_name = fetch_venue_from_contracts(show["lpc_number"])
         if ticket_url:
             topic["ticket_url"] = ticket_url
             log.info("  Ticket URL found: %s", ticket_url)
+        if venue_name:
+            addr = show["venue_address"]
+            topic["headline"] = topic["headline"].replace(addr, venue_name)
+            topic["summary"] = topic["summary"].replace(addr, venue_name)
+            log.info("  Venue name: %s", venue_name)
         log.info("Generating show announcement: %s", topic["headline"])
         posts = generate_posts(topic, skill_graph, perf_context)
         if not posts:
             continue
+        slot = week_slots[show_slots_used] if show_slots_used < len(week_slots) else None
+        effective_slot = slot if slot and slot > datetime.now(_EASTERN) else None
         for platform in ("linkedin", "instagram", "facebook"):
             text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
             if not text:
@@ -160,26 +181,22 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 platform=platform,
                 dry_run=dry_run,
                 image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+                scheduled_at=effective_slot,
             )
             if ok:
-                log.info("  %s show draft queued (%d chars)", platform, len(text))
+                if effective_slot:
+                    log.info("  %s show draft scheduled %s (%d chars)", platform, effective_slot.strftime("%a %b %d %I:%M%p %Z"), len(text))
+                else:
+                    log.info("  %s show draft queued (%d chars)", platform, len(text))
             else:
                 log.warning("  %s show draft FAILED — see error above", platform)
-        used.add(topic["url"])
+        used.add(topic["sheet_key"])
         all_new_topics.append(topic)
-        mark_show_used(show, topic["url"], dry_run=dry_run)
+        mark_show_used(show, topic["sheet_key"], dry_run=dry_run)
+        show_slots_used += 1
 
     # ── Artist news pipeline ──────────────────────────────────────────────────
-    all_slots = get_week_slots()
-    occupied = (
-        get_occupied_slots() if not dry_run else set()
-    )
-    week_slots = [s for s in all_slots if s.date().isoformat() not in occupied]
-    log.info(
-        "Week slots: %d available, %d already occupied in Buffer",
-        len(week_slots),
-        len(all_slots) - len(week_slots),
-    )
+    week_slots = week_slots[show_slots_used:]
 
     # Phase 1: collect all candidate topics across every artist
     all_candidates: list[dict] = []
@@ -239,6 +256,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
             platforms = ("instagram", "facebook") if is_ig_fb_only else ("linkedin", "instagram", "facebook")
             if is_ig_fb_only:
                 log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
+            effective_slot = slot if slot > datetime.now(_EASTERN) else None
             for platform in platforms:
                 text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
                 if not text:
@@ -253,14 +271,14 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                     profile_id,
                     platform=platform,
                     dry_run=dry_run,
-                    scheduled_at=slot,
+                    scheduled_at=effective_slot,
                     image=config._IG_PLACEHOLDER if platform == "instagram" else None,
                 )
                 if ok:
                     log.info(
-                        "  %s draft scheduled %s (%d chars)",
+                        "  %s draft %s (%d chars)",
                         platform,
-                        slot.strftime("%a %b %d %I:%M%p %Z"),
+                        effective_slot.strftime("scheduled %a %b %d %I:%M%p %Z") if effective_slot else "queued",
                         len(text),
                     )
                 else:

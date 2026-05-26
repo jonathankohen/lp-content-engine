@@ -1,17 +1,13 @@
 """
 clean_up.py — Buffer draft maintenance utility.
 
-Two operations, both dry-run by default:
-
-  1. Fix dashes   — strip spaces around em/en dashes in all drafts
-  2. Purge expired — delete show announcement drafts whose date has passed
+Purges expired show announcement drafts (dry-run by default).
 
 Usage:
-  python clean_up.py                      # preview both operations
-  python clean_up.py --apply              # apply both
-  python clean_up.py --fix-dashes         # preview dash fixes only
-  python clean_up.py --purge-expired      # preview expired purge only
-  python clean_up.py --fix-dashes --apply # apply dash fixes only
+  python clean_up.py                        # preview expired drafts
+  python clean_up.py --apply                # delete expired drafts
+  python clean_up.py --delete-all           # preview ALL drafts for deletion
+  python clean_up.py --delete-all --apply   # delete ALL drafts unconditionally
 """
 
 import argparse
@@ -29,13 +25,13 @@ load_dotenv()
 BUFFER_API_URL = "https://api.buffer.com"
 BUFFER_API_KEY = os.environ.get("BUFFER_API_KEY", "")
 
-# ── Buffer API ─────────────────────────────────���──────────────────────────────
+# ── Buffer API ────────────────────────────────────────────────────────────────
 
 def _gql(query: str, variables: dict | None = None) -> dict:
     payload: dict = {"query": query}
     if variables:
         payload["variables"] = variables
-    for attempt in range(4):
+    for _ in range(8):
         resp = requests.post(
             BUFFER_API_URL,
             json=payload,
@@ -64,86 +60,32 @@ def _gql(query: str, variables: dict | None = None) -> dict:
     sys.exit("Buffer rate limit persists. Try again in a minute.")
 
 
-def _get_org_and_channels() -> tuple[str, list[str]]:
+def _get_org_id() -> str:
     data = _gql("query { account { organizations { id name } } }")
     orgs = data.get("data", {}).get("account", {}).get("organizations", [])
     if not orgs:
         sys.exit("No Buffer organizations found — check BUFFER_API_KEY")
-    org_id = orgs[0]["id"]
-    print(f"Org: {orgs[0].get('name', '')} ({org_id})")
-
-    data = _gql(
-        "query GetChannels($input: ChannelsInput!) { channels(input: $input) { id service displayName } }",
-        {"input": {"organizationId": org_id}},
-    )
-    channels = data.get("data", {}).get("channels", [])
-    ids = [c["id"] for c in channels if c.get("service", "").lower() in ("linkedin", "instagram", "facebook")]
-    print(f"Channels: {len(ids)}\n")
-    return org_id, ids
+    print(f"Org: {orgs[0].get('name', '')} ({orgs[0]['id']})\n")
+    return orgs[0]["id"]
 
 
 def _get_drafts(org_id: str) -> list[dict]:
-    all_nodes = []
-    cursor = None
-    while True:
-        variables: dict = {"input": {"organizationId": org_id}}
-        if cursor:
-            variables["after"] = cursor
-        data = _gql(
-            """
-            query GetDrafts($input: PostsInput!, $after: String) {
-              posts(input: $input, after: $after) {
-                edges { node { id text status channel { service } } cursor }
-                pageInfo { hasNextPage endCursor }
-              }
-            }
-            """,
-            variables,
-        )
-        posts_data = data.get("data", {}).get("posts", {})
-        edges = posts_data.get("edges", [])
-        all_nodes.extend(e["node"] for e in edges if e.get("node"))
-        page_info = posts_data.get("pageInfo", {})
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info.get("endCursor")
-        time.sleep(1)
-    return [n for n in all_nodes if n.get("status", "").lower() == "draft"]
-
-
-def _update_post(post: dict, text: str) -> bool:
-    post_id = post["id"]
-    service = post.get("channel", {}).get("service", "").lower()
-
-    _IG_PLACEHOLDER = "https://www.loveproductions.com/wp-content/uploads/2022/03/LPI_logo_RGB_Red_BLK.png"
-
-    edit_input: dict = {
-        "id": post_id,
-        "text": text,
-        "schedulingType": "automatic",
-        "mode": "addToQueue",
-    }
-    if service == "facebook":
-        edit_input["metadata"] = {"facebook": {"type": "post"}}
-    elif service == "instagram":
-        edit_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
-        edit_input["assets"] = {"images": [{"url": _IG_PLACEHOLDER}]}
-
-    result = _gql(
+    """Fetch a single page of posts (pagination removed in 2026 Buffer API update)."""
+    data = _gql(
         """
-        mutation EditPost($input: EditPostInput!) {
-          editPost(input: $input) {
-            ... on PostActionSuccess { post { id } }
-            ... on MutationError { message }
+        query GetDrafts($input: PostsInput!) {
+          posts(input: $input) {
+            edges { node { id text } }
           }
         }
         """,
-        {"input": edit_input},
-    ).get("data", {}).get("editPost", {})
-    if "message" in result:
-        print(f"  ERROR: {result['message']}")
-        return False
-    return True
+        {"input": {"organizationId": org_id}},
+    )
+    return [
+        e["node"]
+        for e in data.get("data", {}).get("posts", {}).get("edges", [])
+        if e.get("node")
+    ]
 
 
 def _delete_post(post_id: str) -> bool:
@@ -162,31 +104,6 @@ def _delete_post(post_id: str) -> bool:
         print(f"  ERROR deleting {post_id}: {result['message']}")
         return False
     return True
-
-
-# ── Dash fixing ──────────────────────────────��────────────────────────────────
-
-def _fix_dashes(text: str) -> str:
-    return text.replace(" — ", "—").replace(" – ", "–")
-
-
-def run_fix_dashes(org_id: str, apply: bool) -> None:
-    print("── Fix dashes ────────────────────���──────────────────────")
-    changed = skipped = 0
-    for post in _get_drafts(org_id):
-            text = post.get("text", "")
-            fixed = _fix_dashes(text)
-            if fixed == text:
-                skipped += 1
-                continue
-            print(f"\nPost {post['id']}:")
-            print(f"  BEFORE: {text[:120]!r}")
-            print(f"  AFTER:  {fixed[:120]!r}")
-            if apply:
-                ok = _update_post(post, fixed)
-                print(f"  {'Updated.' if ok else 'FAILED.'}")
-            changed += 1
-    print(f"\n{'Applied' if apply else 'Would fix'} {changed} post(s). {skipped} already clean.\n")
 
 
 # ── Expired show purge ────────────────────────────────────────────────────────
@@ -226,8 +143,6 @@ def _extract_earliest_date(text: str) -> datetime | None:
                 dt = datetime.strptime(raw.strip(), fmt)
                 if dt.year == 1900:
                     dt = dt.replace(year=today.year)
-                    if dt.date() < today:
-                        dt = dt.replace(year=today.year + 1)
                 if earliest is None or dt.date() < earliest:
                     earliest = dt.date()
                 break
@@ -245,43 +160,53 @@ def _is_expired_show(text: str) -> bool:
     return dt.date() < datetime.now(tz=timezone.utc).date()
 
 
+def run_delete_all(org_id: str, apply: bool) -> None:
+    print("── Delete all drafts ────────────────────────────────────")
+    drafts = _get_drafts(org_id)
+    for post in drafts:
+        print(f"\nPost {post['id']}:")
+        print(f"  {post.get('text', '')[:120]!r}")
+        if apply:
+            ok = _delete_post(post["id"])
+            print(f"  {'Deleted.' if ok else 'FAILED.'}")
+    print(f"\n{'Deleted' if apply else 'Would delete'} {len(drafts)} draft(s).\n")
+
+
 def run_purge_expired(org_id: str, apply: bool) -> None:
-    print("── Purge expired show drafts ───────────────────────���─────")
+    print("── Purge expired show drafts ────────────────────────────")
     found = skipped = 0
     for post in _get_drafts(org_id):
-            text = post.get("text", "")
-            if not _is_expired_show(text):
-                skipped += 1
-                continue
-            print(f"\nPost {post['id']} (expired):")
-            print(f"  {text[:120]!r}")
-            if apply:
-                ok = _delete_post(post["id"])
-                print(f"  {'Deleted.' if ok else 'FAILED.'}")
-            found += 1
+        text = post.get("text", "")
+        if not _is_expired_show(text):
+            skipped += 1
+            continue
+        print(f"\nPost {post['id']} (expired):")
+        print(f"  {text[:120]!r}")
+        if apply:
+            ok = _delete_post(post["id"])
+            print(f"  {'Deleted.' if ok else 'FAILED.'}")
+        found += 1
     print(f"\n{'Deleted' if apply else 'Would delete'} {found} expired post(s). {skipped} not expired.\n")
 
 
-# ── Entry point ─────────────────────────────��─────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Buffer draft maintenance utility")
     parser.add_argument("--apply", action="store_true", help="Write changes (default: dry-run)")
-    parser.add_argument("--fix-dashes", action="store_true", help="Run dash fix only")
-    parser.add_argument("--purge-expired", action="store_true", help="Run expired purge only")
+    parser.add_argument("--delete-all", action="store_true", help="Delete ALL drafts unconditionally (use with --apply)")
     args = parser.parse_args()
 
     if not BUFFER_API_KEY:
         sys.exit("BUFFER_API_KEY not set")
 
-    run_all = not args.fix_dashes and not args.purge_expired
+    org_id = _get_org_id()
 
-    org_id, _ = _get_org_and_channels()
-
-    if run_all or args.fix_dashes:
-        run_fix_dashes(org_id, apply=args.apply)
-    if run_all or args.purge_expired:
+    if args.delete_all:
+        run_delete_all(org_id, apply=args.apply)
+        if not args.apply:
+            print("Dry run — pass --apply to delete all drafts.")
+    else:
         run_purge_expired(org_id, apply=args.apply)
-
-    if not args.apply:
-        print("Dry run — pass --apply to write changes.")
+        if not args.apply:
+            print("Dry run — pass --apply to delete expired drafts.")

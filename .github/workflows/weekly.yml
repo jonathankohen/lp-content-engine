@@ -2,7 +2,7 @@ name: Weekly Content Drafts
 
 on:
   schedule:
-    - cron: '0 14 * * 1'  # Every Monday at 9am ET (14:00 UTC)
+    - cron: '0 12 * * 1'  # Every Monday at 8am ET (12:00 UTC)
   workflow_dispatch:        # Allow manual trigger from GitHub Actions tab
 
 jobs:
@@ -31,3 +31,4 @@ jobs:
           AIRTABLE_CALENDAR_TABLE_ID: ${{ secrets.AIRTABLE_CALENDAR_TABLE_ID }}
           FOUND_NEWS_STORIES_SHEETS_ID: ${{ secrets.FOUND_NEWS_STORIES_SHEETS_ID }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          LINKEDIN_ANALYTICS_CSV_CONTENT: ${{ secrets.LINKEDIN_ANALYTICS_CSV_CONTENT }}

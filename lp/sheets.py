@@ -59,13 +59,16 @@ def mark_show_used(show: dict, lpc_key: str, dry_run: bool = False) -> None:
     log.info("Recorded show in Sheets: %s", lpc_key)
 
 
-def lookup_ticket_url(show_title: str, show_date: str) -> str | None:
-    """Look up the ticket URL for a show in the tour dates sheet (artist tab + date match)."""
+def lookup_ticket_url(show_title: str, show_date: str) -> tuple[str | None, str | None]:
+    """Look up ticket URL and venue name for a show in the tour dates sheet.
+
+    Returns (ticket_url, venue_name) — either may be None if not found.
+    """
     if not TOUR_DATES_SHEET_ID:
-        return None
+        return (None, None)
     creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
     if not creds_path:
-        return None
+        return (None, None)
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
@@ -81,16 +84,17 @@ def lookup_ticket_url(show_title: str, show_date: str) -> str | None:
                 break
         if not target_ws:
             log.debug("No tour dates tab found for '%s'", show_title)
-            return None
+            return (None, None)
 
         target_str = datetime.strptime(show_date, "%Y-%m-%d").strftime("%m/%d/%y")
         for row in target_ws.get_all_values()[1:]:
             if row and row[0].strip() == target_str:
                 url = row[5].strip() if len(row) > 5 else ""
-                return url or None
+                venue_name = row[1].strip() if len(row) > 1 else ""
+                return (url or None, venue_name or None)
     except Exception as exc:
         log.debug("Ticket URL lookup failed for '%s': %s", show_title, exc)
-    return None
+    return (None, None)
 
 
 def mark_topics_used(topics: list[dict], dry_run: bool = False) -> None:

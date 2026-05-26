@@ -47,10 +47,8 @@ python main.py --artist "Concert of Kings"  # single artist
 python main.py --test-calendar              # print upcoming shows from Airtable calendar and exit
 python main.py --test-analytics             # print top-performing Buffer posts with engagement scores and exit
 
-python clean_up.py                          # preview dash fixes + expired purge
-python clean_up.py --apply                  # apply both
-python clean_up.py --fix-dashes --apply     # dashes only
-python clean_up.py --purge-expired --apply  # expired show drafts only
+python clean_up.py                          # preview expired show draft purge
+python clean_up.py --apply                  # delete expired show drafts
 ```
 
 ## Key files
@@ -61,7 +59,7 @@ python clean_up.py --purge-expired --apply  # expired show drafts only
 | `clean_up.py`                                | Buffer draft maintenance — fixes em/en dash spacing and purges expired show announcement drafts                         |
 | `lp/config.py`                               | All env vars, constants, cost tracking state + helpers, `load_env()`                                                    |
 | `lp/loaders.py`                              | `load_skill_graph()`, `load_artist_mappings()`                                                                          |
-| `lp/airtable.py`                             | `fetch_airtable_artists()`, `fetch_upcoming_shows()`, `show_to_topic()`                                                 |
+| `lp/airtable.py`                             | `fetch_airtable_artists()`, `fetch_upcoming_shows()`, `show_to_topic()`, `fetch_venue_from_contracts()`                 |
 | `lp/sheets.py`                               | Google Sheets read/write — `read_used_topics()`, `mark_topics_used()`, `mark_show_used()`, `lookup_ticket_url()`        |
 | `lp/ai.py`                                   | Claude helpers — `search_artist_news()`, `search_historical_facts()`, `score_and_rank_topics()`, `generate_posts()`, `format_performance_context()` |
 | `lp/buffer.py`                               | Buffer GraphQL — `discover_buffer_profiles()`, `post_draft_to_buffer()`, `fetch_top_performers()`, `purge_expired_show_drafts()`, `test_buffer()` |
@@ -88,9 +86,9 @@ python clean_up.py --purge-expired --apply  # expired show drafts only
 
 **Buffer GraphQL notes.** Fetching posts requires `organizationId` (not `channelId`) in `PostsInput`. Updating posts uses `editPost` mutation (not `updatePost`). Facebook edits require `metadata.facebook.type`. Instagram edits require `metadata.instagram.type` + at least one image (use the LP logo placeholder). **Note:** Buffer removed `status` and `after` (pagination cursor) from `PostsInput` in a 2026 API update. `get_occupied_slots()` now fetches a single page only (no pagination) — sufficient for checking this week's 7 slots. `fetch_top_performers()` uses a `statistics` field that may or may not be available; it degrades gracefully to `[]` if not.
 
-**Em dash convention.** Posts are written with `—` (no spaces). The `replace(" — ", "—")` normalization in `main.py` catches anything Claude generates with spaces. `clean_up.py --fix-dashes` retroactively cleans existing Buffer drafts.
+**Em dash convention.** Posts are written with `—` (no spaces). The `replace(" — ", "—")` normalization in `main.py` catches anything Claude generates with spaces. `clean_up.py --fix-dashes` retroactively cleans existing Buffer drafts. The skill graph enforces a hard cap of **one em dash per post maximum** (see `humanizer.md`).
 
-**Show announcements (calendar pipeline).** `fetch_upcoming_shows()` pulls from Airtable base `appXLETHThc0p5MOz` (env: `AIRTABLE_CALENDAR_BASE_ID`), table `tblK2LMog1WUEv3j0`. Filters for `LPC Contract Status = "(FE) Fully Executed"` and show dates within the next 7 days (`SHOW_DAYS_AHEAD`). Dedup key is `lpc_{LPC #}` stored in the url column of Sheets. Test with `python main.py --test-calendar`.
+**Show announcements (calendar pipeline).** `fetch_upcoming_shows()` pulls from Airtable base `appXLETHThc0p5MOz` (env: `AIRTABLE_CALENDAR_BASE_ID`), table `tblK2LMog1WUEv3j0`. Filters for `LPC Contract Status = "(FE) Fully Executed"` and show dates within the next 7 days (`SHOW_DAYS_AHEAD`). Dedup key is `lpc_{LPC #}` stored in the url column of Sheets. Test with `python main.py --test-calendar`. Show announcements are scheduled to the **first available week slots** (10am ET), before any artist news posts claim them. Artist news then fills the remaining slots.
 
 **Artist names are exact.** The `artists.md` table maps tribute act names exactly as they appear in Airtable. Claude searches for the exact name — do not paraphrase. "Concert of Kings" (not "Elvis: The Concert of Kings"). Priscilla Presley is a separate act from Concert of Kings. **Note:** Airtable still has the old name "Elvis: The Concert of Kings" — needs to be updated there too for the mapping to work correctly.
 
@@ -104,7 +102,7 @@ python clean_up.py --purge-expired --apply  # expired show drafts only
 
 **Historical facts (Phase 4).** After the artist news pipeline fills its slots, any remaining week slots are filled by `search_historical_facts()` — pre-1990 archival facts about original artists from sources like archive.org, old Rolling Stone, Billboard, etc. These are Instagram + Facebook only, lowest priority, generated only for artists with an original artist mapping, and excluded in `--artist` single-artist mode. Deduped via the same Sheets mechanism as news topics.
 
-**Ticket links in show announcements.** `lookup_ticket_url()` in `lp/sheets.py` looks up a ticket URL in the tour dates Google Sheet (`TOUR_DATES_SHEET_ID`) produced by the `love-automations` repo. The sheet has per-artist tabs named by display name (e.g., "Arrival From Sweden" for "Arrival From Sweden: The Music of ABBA") with columns: Date (MM/DD/YY), Venue, City, Region, Country, Ticket URL, Source. Matching is by tab name (substring of show_title, case-insensitive) + date. If no match, the post is generated without a ticket link.
+**Ticket links and venue names in show announcements.** `lookup_ticket_url()` in `lp/sheets.py` looks up a ticket URL *and* venue name in the tour dates Google Sheet (`TOUR_DATES_SHEET_ID`) produced by the `love-automations` repo. The sheet has per-artist tabs named by display name (e.g., "Arrival from Sweden" for "Arrival from Sweden: The Music of ABBA") with columns: Date (MM/DD/YY), Venue, City, Region, Country, Ticket URL, Source. Matching is by tab name (substring of show_title, case-insensitive) + date. If no venue name is found there, `fetch_venue_from_contracts()` in `lp/airtable.py` falls back to the "LPI - Contracts" table in the calendar Airtable base (`AIRTABLE_CALENDAR_BASE_ID`), filtering by `LPC #`. The `Venue` field from that table is used to replace the raw address in the headline and summary. If neither source has a venue name, the address is used as-is.
 
 **Self-learning via performance context.** `fetch_top_performers()` in `lp/buffer.py` delegates to `fetch_meta_top_performers()` in `lp/meta.py`, which queries the Meta Graph API for recent Facebook Page posts ranked by shares + reactions. `format_performance_context()` in `lp/ai.py` formats the top 3 as style examples injected into every `generate_posts()` call. Instagram is supported in the code but requires the LP Instagram account to be linked to the Facebook Page in Meta Business settings. Buffer's own `statistics` field is paywalled — Meta Graph API is the correct data source. Token setup: run `python get_page_token.py` after generating a fresh User Access Token in Graph API Explorer with these permissions: `pages_read_engagement`, `pages_show_list`, `instagram_basic`, `pages_read_user_content`, `pages_manage_posts`. The resulting Page Access Token does not expire. Notes: `me/posts` fails for New Pages Experience pages — use `{page_id}/posts` instead. `reactions.summary(true)` and `comments.summary(true)` require `pages_read_user_content` + `pages_manage_posts` in addition to `pages_read_engagement`.
 
@@ -120,7 +118,19 @@ FOUND_NEWS_STORIES_SHEETS_ID
 TOUR_DATES_SHEET_ID     # optional: tour dates sheet from love-automations repo (for ticket links)
 COST_CAP_USD            # default: 5.00
 GOOGLE_APPLICATION_CREDENTIALS_JSON  # service account JSON string (CI/Actions)
+LINKEDIN_ANALYTICS_CSV  # optional: path to manually exported LinkedIn analytics CSV
 ```
+
+## LinkedIn analytics (self-learning)
+
+LinkedIn API access was applied for but not approved. Instead, export analytics manually:
+
+1. Go to the LinkedIn Company Page admin → **Analytics → Updates**
+2. Click **Export** (top right) to download a CSV
+3. Set `LINKEDIN_ANALYTICS_CSV=/path/to/export.csv` in `.env`
+4. Run `python main.py --test-analytics` to confirm LinkedIn posts appear in the output
+
+`lp/linkedin.py` parses the CSV and feeds the top performers into `fetch_top_performers()` alongside Meta posts. Re-export monthly (or whenever) to refresh the data. The CSV column names LinkedIn uses are: `Post title`, `Impressions`, `Likes`, `Comments`, `Shares`.
 
 ## Adding or editing artists
 

@@ -39,8 +39,7 @@ remember," "one might argue," "needless to say."
 - "very unique" → "unique"
 - "completely finished" → "finished"
 
-**Excessive em dashes** — Use em dashes only for genuine parenthetical
-asides. Not as a rhythm device after every sentence.
+**Em dash limit: one per post, maximum. This is a hard rule, not a preference.** Before finalizing each post, count the em dashes. If there is more than one, rewrite the sentences so only one remains — replace the others with a comma, semicolon, colon, or period, whichever fits the grammar. Do not use em dashes as a rhythm device, a sentence connector, or for emphasis. The only permitted use is a single genuine parenthetical aside where no other punctuation works as well.
 
 **Decorative bold** — Bold only genuinely critical terms. Not for decoration
 or to break up text.

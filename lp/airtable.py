@@ -121,6 +121,30 @@ def fetch_upcoming_shows() -> list[dict]:
     return shows
 
 
+def fetch_venue_from_contracts(lpc_number: str) -> str | None:
+    """Look up the Venue field from the LPI - Contracts table by LPC number."""
+    if not AIRTABLE_CALENDAR_BASE_ID or not lpc_number:
+        return None
+    try:
+        resp = requests.get(
+            f"https://api.airtable.com/v0/{AIRTABLE_CALENDAR_BASE_ID}/LPI%20-%20Contracts",
+            headers={"Authorization": f"Bearer {AIRTABLE_API_KEY}"},
+            params={
+                "filterByFormula": f"{{LPC #}}='{lpc_number}'",
+                "fields[]": "Venue",
+                "maxRecords": 1,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        records = resp.json().get("records", [])
+        if records:
+            return records[0].get("fields", {}).get("Venue") or None
+    except Exception as exc:
+        log.debug("Contracts venue lookup failed for '%s': %s", lpc_number, exc)
+    return None
+
+
 def show_to_topic(show: dict, mappings: dict) -> dict:
     """Convert an Airtable calendar show into a topic dict for generate_posts()."""
     try:
@@ -133,7 +157,8 @@ def show_to_topic(show: dict, mappings: dict) -> dict:
         "artist":          title,
         "original_artist": mappings.get(title, ""),
         "headline":        f"Upcoming Show: {title} — {venue} — {date_formatted}",
-        "url":             f"lpc_{show['lpc_number']}",
+        "url":             "",
+        "sheet_key":       f"lpc_{show['lpc_number']}",
         "summary":         f"{title} is performing at {venue} on {date_formatted}. Confirmed booking.",
         "hook_type":       "upcoming_show",
         "ticket_url":      None,
