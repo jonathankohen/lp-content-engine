@@ -47,8 +47,8 @@ python main.py --artist "Concert of Kings"  # single artist
 python main.py --test-calendar              # print upcoming shows from Airtable calendar and exit
 python main.py --test-analytics             # print top-performing Buffer posts with engagement scores and exit
 
-python clean_up.py                          # preview expired show draft purge
-python clean_up.py --apply                  # delete expired show drafts
+python clean_up.py          # preview expired show draft purge
+python clean_up.py --apply  # delete expired show drafts
 ```
 
 ## Key files

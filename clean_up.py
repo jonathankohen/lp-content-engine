@@ -4,10 +4,8 @@ clean_up.py — Buffer draft maintenance utility.
 Purges expired show announcement drafts (dry-run by default).
 
 Usage:
-  python clean_up.py                        # preview expired drafts
-  python clean_up.py --apply                # delete expired drafts
-  python clean_up.py --delete-all           # preview ALL drafts for deletion
-  python clean_up.py --delete-all --apply   # delete ALL drafts unconditionally
+  python clean_up.py          # preview expired drafts
+  python clean_up.py --apply  # delete expired drafts
 """
 
 import argparse
@@ -160,18 +158,6 @@ def _is_expired_show(text: str) -> bool:
     return dt.date() < datetime.now(tz=timezone.utc).date()
 
 
-def run_delete_all(org_id: str, apply: bool) -> None:
-    print("── Delete all drafts ────────────────────────────────────")
-    drafts = _get_drafts(org_id)
-    for post in drafts:
-        print(f"\nPost {post['id']}:")
-        print(f"  {post.get('text', '')[:120]!r}")
-        if apply:
-            ok = _delete_post(post["id"])
-            print(f"  {'Deleted.' if ok else 'FAILED.'}")
-    print(f"\n{'Deleted' if apply else 'Would delete'} {len(drafts)} draft(s).\n")
-
-
 def run_purge_expired(org_id: str, apply: bool) -> None:
     print("── Purge expired show drafts ────────────────────────────")
     found = skipped = 0
@@ -194,7 +180,6 @@ def run_purge_expired(org_id: str, apply: bool) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Buffer draft maintenance utility")
     parser.add_argument("--apply", action="store_true", help="Write changes (default: dry-run)")
-    parser.add_argument("--delete-all", action="store_true", help="Delete ALL drafts unconditionally (use with --apply)")
     args = parser.parse_args()
 
     if not BUFFER_API_KEY:
@@ -202,11 +187,6 @@ if __name__ == "__main__":
 
     org_id = _get_org_id()
 
-    if args.delete_all:
-        run_delete_all(org_id, apply=args.apply)
-        if not args.apply:
-            print("Dry run — pass --apply to delete all drafts.")
-    else:
-        run_purge_expired(org_id, apply=args.apply)
-        if not args.apply:
-            print("Dry run — pass --apply to delete expired drafts.")
+    run_purge_expired(org_id, apply=args.apply)
+    if not args.apply:
+        print("Dry run — pass --apply to delete expired drafts.")
