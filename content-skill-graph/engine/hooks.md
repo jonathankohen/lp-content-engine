@@ -32,6 +32,18 @@ All posts have the same goal: to get buyers to book our acts. Please make every 
   - "Dolly Parton just announced a stadium tour--and The Dolly Show is celebrating all month long. Come join us for a packed show."
   - "The Eagles just got inducted into the Rock Hall again. If that made you smile, the Legends of Classic Rock would be a great fit for your venue."
 
+## Trivia about Artist Represented by Tribute
+
+A surprising, lesser-known fact about the original artist — not tied to any date, not breaking news. The goal is an "I didn't know that" reaction that makes people share, then ties back to why our tribute act is worth booking.
+
+- Best on: Instagram, Facebook (never LinkedIn)
+- Any era — pick the most share-worthy fact, not the most recent
+- Lead with curiosity; cite the source with a link when one exists
+- Avoid clichés everyone already knows; aim for genuine surprise
+- Examples:
+  - "Dolly Parton writes most of her songs at 3am — including two classics she finished the same night. The Dolly Show carries that same restless energy to the stage."
+  - "Did you know Freddie Mercury designed Queen's crest himself, hiding all four members' zodiac signs in it? See the legend brought to life with The Rocket Man Show."
+
 ## Historical Fact about Artist Represented by Tribute
 
 "On this day in 1978, Dolly Parton released (song)" (make sure to give source in link)

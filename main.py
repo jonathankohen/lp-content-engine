@@ -32,6 +32,7 @@ from lp.ai import (
     score_and_rank_topics,
     search_artist_news,
     search_historical_facts,
+    search_trivia,
 )
 from lp.buffer import (
     discover_buffer_profiles,
@@ -86,6 +87,85 @@ def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
         used.add(chosen)
         selected.append(ranked[chosen])
     return selected
+
+
+def _fill_with_facts(
+    *,
+    label: str,
+    search_fn,
+    remaining_slots: list[datetime],
+    artists: list[dict],
+    mappings: dict,
+    scheduled_topics: list[dict],
+    used: set,
+    skill_graph: str,
+    perf_context: str,
+    buffer_profiles: dict,
+    dry_run: bool,
+) -> None:
+    """Fill remaining week slots with Instagram + Facebook-only fact posts (trivia / historical).
+
+    Only acts with an original-artist mapping that haven't already been scheduled this run are
+    eligible. ``search_fn`` is a callable ``(act_name, original, slot) -> list[dict]``.
+    Mutates ``scheduled_topics`` and ``used`` in place.
+    """
+    if not remaining_slots:
+        return
+    scheduled_acts = {t.get("_act", "") for t in scheduled_topics}
+    candidates = [
+        a for a in artists
+        if mappings.get(a["name"]) and a["name"] not in scheduled_acts
+    ]
+    for slot, artist in zip(remaining_slots, candidates):
+        original = mappings[artist["name"]]
+        log.info("--- %s: %s [%s]", label, artist["name"], artist["priority"])
+        found = search_fn(artist["name"], original, slot)
+        new_items = filter_new_topics(found, used)
+        if not new_items:
+            log.info("No %s found for %s", label.lower(), artist["name"])
+            continue
+        item = new_items[0]
+        item["_priority"] = artist["priority"]
+        item["_act"] = artist["name"]
+        key = item.get("url", "").strip() or item.get("headline", "").strip()
+        used.add(key)
+        log.info(
+            "Generating %s: %s (slot=%s)",
+            label.lower(),
+            item.get("headline", "")[:80],
+            slot.strftime("%a %b %d"),
+        )
+        posts = generate_posts(item, skill_graph, perf_context)
+        if not posts:
+            continue
+        for platform in ("instagram", "facebook"):
+            text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
+            if not text:
+                log.warning("No %s post for %s '%s'", platform, label.lower(), item.get("headline", "")[:60])
+                continue
+            profile_id = buffer_profiles.get(platform, "")
+            if not profile_id and not dry_run:
+                log.warning("No Buffer profile for %s — skipping", platform)
+                continue
+            ok = post_draft_to_buffer(
+                text,
+                profile_id,
+                platform=platform,
+                dry_run=dry_run,
+                scheduled_at=slot,
+                image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+            )
+            if ok:
+                log.info(
+                    "  %s %s scheduled %s (%d chars)",
+                    platform,
+                    label.lower(),
+                    slot.strftime("%a %b %d %I:%M%p %Z"),
+                    len(text),
+                )
+            else:
+                log.warning("  %s draft FAILED — see error above", platform)
+        scheduled_topics.append(item)
 
 
 load_dotenv()
@@ -252,7 +332,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 continue
 
             hook = topic.get("hook_type", "")
-            is_ig_fb_only = hook in ("original_artist_news", "historical_fact")
+            is_ig_fb_only = hook in ("original_artist_news", "historical_fact", "trivia")
             platforms = ("instagram", "facebook") if is_ig_fb_only else ("linkedin", "instagram", "facebook")
             if is_ig_fb_only:
                 log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
@@ -286,62 +366,36 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
 
             scheduled_topics.append(topic)
 
-        # Phase 4: fill remaining slots with historical facts (Instagram + Facebook only)
-        remaining_slots = week_slots[len(scheduled_topics):]
-        if remaining_slots and not single_artist:
-            scheduled_acts = {t.get("_act", "") for t in scheduled_topics}
-            history_candidates = [
-                a for a in artists
-                if mappings.get(a["name"]) and a["name"] not in scheduled_acts
-            ]
-            for slot, artist in zip(remaining_slots, history_candidates):
-                original = mappings[artist["name"]]
-                log.info("--- Historical fact: %s [%s]", artist["name"], artist["priority"])
-                facts = search_historical_facts(artist["name"], original, slot)
-                new_facts = filter_new_topics(facts, used)
-                if not new_facts:
-                    log.info("No historical fact found for %s", artist["name"])
-                    continue
-                fact = new_facts[0]
-                fact["_priority"] = artist["priority"]
-                fact["_act"] = artist["name"]
-                key = fact.get("url", "").strip() or fact.get("headline", "").strip()
-                used.add(key)
-                log.info(
-                    "Generating historical fact: %s (slot=%s)",
-                    fact.get("headline", "")[:80],
-                    slot.strftime("%a %b %d"),
-                )
-                posts = generate_posts(fact, skill_graph, perf_context)
-                if not posts:
-                    continue
-                for platform in ("instagram", "facebook"):
-                    text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
-                    if not text:
-                        log.warning("No %s post for historical fact '%s'", platform, fact.get("headline", "")[:60])
-                        continue
-                    profile_id = buffer_profiles.get(platform, "")
-                    if not profile_id and not dry_run:
-                        log.warning("No Buffer profile for %s — skipping", platform)
-                        continue
-                    ok = post_draft_to_buffer(
-                        text,
-                        profile_id,
-                        platform=platform,
-                        dry_run=dry_run,
-                        scheduled_at=slot,
-                        image=config._IG_PLACEHOLDER if platform == "instagram" else None,
-                    )
-                    if ok:
-                        log.info(
-                            "  %s historical fact scheduled %s (%d chars)",
-                            platform,
-                            slot.strftime("%a %b %d %I:%M%p %Z"),
-                            len(text),
-                        )
-                    else:
-                        log.warning("  %s draft FAILED — see error above", platform)
-                scheduled_topics.append(fact)
+        # Phase 4: fill remaining slots with original-artist trivia (Instagram + Facebook only)
+        if not single_artist:
+            _fill_with_facts(
+                label="Trivia",
+                search_fn=lambda name, original, slot: search_trivia(name, original),
+                remaining_slots=week_slots[len(scheduled_topics):],
+                artists=artists,
+                mappings=mappings,
+                scheduled_topics=scheduled_topics,
+                used=used,
+                skill_graph=skill_graph,
+                perf_context=perf_context,
+                buffer_profiles=buffer_profiles,
+                dry_run=dry_run,
+            )
+
+            # Phase 5: fill any still-remaining slots with pre-1990 historical facts (IG + FB only)
+            _fill_with_facts(
+                label="Historical fact",
+                search_fn=search_historical_facts,
+                remaining_slots=week_slots[len(scheduled_topics):],
+                artists=artists,
+                mappings=mappings,
+                scheduled_topics=scheduled_topics,
+                used=used,
+                skill_graph=skill_graph,
+                perf_context=perf_context,
+                buffer_profiles=buffer_profiles,
+                dry_run=dry_run,
+            )
 
         all_new_topics.extend(scheduled_topics)
         mark_topics_used(scheduled_topics, dry_run=dry_run)

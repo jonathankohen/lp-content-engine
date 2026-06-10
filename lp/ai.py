@@ -228,6 +228,62 @@ def search_historical_facts(tribute: str, original: str, slot_date: datetime) ->
     return items[:1]
 
 
+def search_trivia(tribute: str, original: str) -> list[dict]:
+    """Search for a surprising piece of trivia about the original artist (any era, not date-bound)."""
+    if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(tribute):
+        return []
+
+    prompt = (
+        f"Search for a surprising, lesser-known piece of trivia about '{original}' to use in a "
+        f"social media post for a tribute-act booking agency. "
+        f"This is NOT breaking news and NOT tied to any particular date — find a genuinely "
+        f"interesting fact from any era of the artist's career that a casual fan would not know "
+        f"(e.g. an unusual recording story, the hidden meaning behind a song, a record they hold, "
+        f"a surprising collaboration, an odd job before fame, a quirky stage habit). "
+        f"Prioritize facts that are fun, share-worthy, and spark an 'I didn't know that' reaction. "
+        f"Avoid anything already widely repeated as a cliché. "
+        f"Return ONLY a JSON array with at most one object (or [] if nothing compelling is found). "
+        f"The object must have exactly these keys: "
+        f"headline (a punchy, curiosity-driving headline for the trivia), "
+        f"url (most direct source URL available), "
+        f"summary (1-2 sentences stating the fact), "
+        f"hook_type (always the string 'trivia'), "
+        f"artist (always '{tribute}'). "
+        f"Do not include any text outside the JSON array."
+    )
+
+    config.claude_throttle()
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    try:
+        raw = client.messages.with_raw_response.create(
+            model=config.SEARCH_MODEL,
+            max_tokens=config.MAX_TOKENS,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resp = raw.parse()
+        config.claude_call_done(dict(raw.headers))
+        config.track_cost(resp, config.SEARCH_MODEL)
+    except Exception as exc:
+        log.error("Trivia search error for %s: %s", tribute, exc)
+        return []
+
+    text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
+    text = re.sub(r"```(?:json)?\s*", "", text)
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        items = json.loads(match.group())
+    except json.JSONDecodeError:
+        return []
+
+    for item in items:
+        item.setdefault("original_artist", original)
+    log.info("Found %d trivia item(s) for %s", len(items), tribute)
+    return items[:1]
+
+
 def format_performance_context(top_posts: list[dict]) -> str:
     """Format top-performing Buffer posts as style examples for Claude."""
     if not top_posts:
