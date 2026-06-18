@@ -307,9 +307,10 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     url = topic.get("url", "")
     url_line = f"URL: {url}\n" if url else ""
     source_url_instruction = (
-        "Include the source URL in the LinkedIn and Facebook posts only — weave it naturally "
+        "Include the source URL in the Facebook post only — weave it naturally "
         "into the post body (e.g. 'Full story here: <url>' or 'Read more: <url>'). "
-        "Do NOT include any raw URL in the Instagram post.\n\n"
+        "Do NOT include any raw URL in the LinkedIn or Instagram posts (LinkedIn is an "
+        "image-only post and must not contain a link).\n\n"
     ) if url else ""
     ticket_url = topic.get("ticket_url") or ""
     ticket_line = (

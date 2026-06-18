@@ -140,11 +140,17 @@ def post_draft_to_buffer(
     else:
         post_input["mode"] = "addToQueue"
     if platform == "facebook":
+        # No image asset — keep the URL in the body so Facebook unfurls a native
+        # link-preview card (with the source's og:image) on its own.
         post_input["metadata"] = {"facebook": {"type": "post"}}
     elif platform == "instagram":
         post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
         if image:
             post_input["assets"] = {"image": {"url": image}}
+    elif platform == "linkedin" and image:
+        # Attach the scraped image as native media. With no URL in the LinkedIn
+        # body, this renders as an image post with no link-preview card.
+        post_input["assets"] = {"image": {"url": image}}
     data = _buffer_gql(
         """
         mutation CreateDraft($input: CreatePostInput!) {

@@ -44,6 +44,7 @@ from lp.buffer import (
 )
 from lp.airtable import fetch_venue_from_contracts
 from lp.loaders import load_artist_mappings, load_skill_graph
+from lp.scrape import fetch_og_image
 from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
 
 _EASTERN = ZoneInfo("America/New_York")
@@ -59,6 +60,20 @@ def get_week_slots() -> list[datetime]:
         datetime(tuesday.year, tuesday.month, tuesday.day, _POST_HOUR, 0, 0, tzinfo=_EASTERN) + timedelta(days=i)
         for i in range(7)
     ]
+
+
+def _image_for(platform: str, og_image: str | None) -> str | None:
+    """Per-platform image routing for a topic's scraped og:image.
+
+    - instagram: scraped image, falling back to the LP logo placeholder
+    - linkedin: scraped image only (None -> text-only post, never a link card)
+    - facebook: None (relies on the URL in the body for a native link preview)
+    """
+    if platform == "instagram":
+        return og_image or config._IG_PLACEHOLDER
+    if platform == "linkedin":
+        return og_image
+    return None
 
 
 def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
@@ -138,6 +153,7 @@ def _fill_with_facts(
         posts = generate_posts(item, skill_graph, perf_context)
         if not posts:
             continue
+        og_image = fetch_og_image(item.get("url", ""))
         for platform in ("instagram", "facebook"):
             text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
             if not text:
@@ -153,7 +169,7 @@ def _fill_with_facts(
                 platform=platform,
                 dry_run=dry_run,
                 scheduled_at=slot,
-                image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+                image=_image_for(platform, og_image),
             )
             if ok:
                 log.info(
@@ -246,6 +262,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
             continue
         slot = week_slots[show_slots_used] if show_slots_used < len(week_slots) else None
         effective_slot = slot if slot and slot > datetime.now(_EASTERN) else None
+        og_image = fetch_og_image(topic.get("url", ""))
         for platform in ("linkedin", "instagram", "facebook"):
             text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
             if not text:
@@ -260,7 +277,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 profile_id,
                 platform=platform,
                 dry_run=dry_run,
-                image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+                image=_image_for(platform, og_image),
                 scheduled_at=effective_slot,
             )
             if ok:
@@ -337,6 +354,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
             if is_ig_fb_only:
                 log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
             effective_slot = slot if slot > datetime.now(_EASTERN) else None
+            og_image = fetch_og_image(topic.get("url", ""))
             for platform in platforms:
                 text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
                 if not text:
@@ -352,7 +370,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                     platform=platform,
                     dry_run=dry_run,
                     scheduled_at=effective_slot,
-                    image=config._IG_PLACEHOLDER if platform == "instagram" else None,
+                    image=_image_for(platform, og_image),
                 )
                 if ok:
                     log.info(
