@@ -2,7 +2,7 @@ name: Weekly Content Drafts
 
 on:
   schedule:
-    - cron: '0 12 * * 1'  # Every Monday at 8am ET (12:00 UTC)
+    - cron: '13 7 * * 1'  # Every Monday at 07:13 UTC (~3:13am ET). Early + off-hour so GitHub's scheduler delay (often 1.5-3h) still lands results well before 9am ET.
   workflow_dispatch:        # Allow manual trigger from GitHub Actions tab
 
 jobs:
