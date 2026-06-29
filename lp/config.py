@@ -29,6 +29,13 @@ TOUR_DATES_SHEET_ID = os.environ.get("TOUR_DATES_SHEET_ID", "")
 META_PAGE_ACCESS_TOKEN = os.environ.get("META_PAGE_ACCESS_TOKEN", "")
 LINKEDIN_ANALYTICS_CSV = os.environ.get("LINKEDIN_ANALYTICS_CSV", "")
 
+# LP News WordPress plugin (loveproductions.com) — drafts a news post per topic.
+# Set LP_NEWS_URL to the plugin's publish endpoint and LP_NEWS_SECRET to the
+# secret shown on its Settings → LP News page. When LP_NEWS_URL is unset, the
+# website-posting step is skipped (Buffer drafting is unaffected).
+LP_NEWS_URL = os.environ.get("LP_NEWS_URL", "")
+LP_NEWS_SECRET = os.environ.get("LP_NEWS_SECRET", "")
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]
@@ -41,6 +48,7 @@ MAX_TOKENS = 4096
 BUFFER_API_URL = "https://api.buffer.com"
 SKILL_GRAPH_DIR = Path(__file__).parent.parent / "content-skill-graph"
 _IG_PLACEHOLDER = "https://www.loveproductions.com/wp-content/uploads/2022/03/LPI_logo_RGB_Red_BLK.png"
+LP_HOMEPAGE = "https://www.loveproductions.com"
 
 # ── Cost tracking ─────────────────────────────────────────────────────────────
 

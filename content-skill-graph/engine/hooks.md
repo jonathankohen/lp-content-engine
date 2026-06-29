@@ -25,11 +25,12 @@ All posts have the same goal: to get buyers to book our acts. Please make every 
 
 ## News from Artist Represented by Tribute
 
-"Dolly Parton is starting a residency this fall after a hiatus due to medical issues." Emphasize that our act represents someone important and loved, and therefore will draw an audience.
+"Dolly Parton just released a new album." Emphasize that our act represents someone important and loved, and therefore will draw an audience.
 
+- **HARD RULE: an original artist's own shows are NEVER news.** Never post about, reference, or build a hook around an original artist's tour, concert, residency, festival appearance, or any live-performance date. Announcing their shows and then pointing to our tribute band looks bad and is off-limits. Only their non-live news (new album/release, award, induction, biopic, anniversary, milestone, passing, etc.) is eligible.
 - Best on: LinkedIn, Instagram, Facebook
 - Examples:
-  - "Dolly Parton just announced a stadium tour--and The Dolly Show is celebrating all month long. Come join us for a packed show."
+  - "Dolly Parton just dropped a new album--and The Dolly Show is celebrating all month long. Come join us for a packed show."
   - "The Eagles just got inducted into the Rock Hall again. If that made you smile, the Legends of Classic Rock would be a great fit for your venue."
 
 ## Trivia about Artist Represented by Tribute

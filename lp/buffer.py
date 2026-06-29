@@ -207,6 +207,59 @@ def get_occupied_slots() -> set[str]:
     return occupied
 
 
+def fetch_buffer_posts(
+    services: set[str] | None = None,
+    statuses: tuple[str, ...] = ("draft",),
+    since: datetime | None = None,
+) -> list[dict]:
+    """Return Buffer posts as {id, text, service, status, dueAt, sentAt}.
+
+    Filters by ``statuses`` (default: drafts only) and, when ``services`` is given,
+    by channel service (e.g. {"facebook"}). When ``since`` is given, keeps only
+    posts that were *sent* on or after that time (``sentAt >= since``) — used to
+    pull the past week's published posts. Fetches a single page of up to 100
+    posts — Buffer removed cursor pagination — which comfortably covers the
+    current queue and a recent date window.
+    """
+    org_id = _get_org_id()
+    data = _buffer_gql(
+        """
+        query GetPosts($input: PostsInput!) {
+          posts(input: $input, first: 100) {
+            edges { node { id text status dueAt sentAt channel { service } } }
+          }
+        }
+        """,
+        {"input": {"organizationId": org_id}},
+    )
+    out: list[dict] = []
+    for edge in data.get("data", {}).get("posts", {}).get("edges", []):
+        node = edge.get("node") or {}
+        service = (node.get("channel") or {}).get("service")
+        if statuses and node.get("status") not in statuses:
+            continue
+        if services and service not in services:
+            continue
+        sent_at = node.get("sentAt")
+        if since is not None:
+            if not sent_at:
+                continue
+            try:
+                if datetime.fromisoformat(sent_at.replace("Z", "+00:00")) < since:
+                    continue
+            except Exception:
+                continue
+        out.append({
+            "id":      node.get("id", ""),
+            "text":    node.get("text", "") or "",
+            "service": service,
+            "status":  node.get("status"),
+            "dueAt":   node.get("dueAt"),
+            "sentAt":  sent_at,
+        })
+    return out
+
+
 def fetch_top_performers(n: int = 3) -> list[dict]:
     """Return top n posts by engagement across Meta (Facebook + Instagram) and LinkedIn."""
     from .meta import fetch_meta_top_performers
@@ -223,7 +276,9 @@ def _extract_earliest_date(text: str) -> datetime | None:
     today = datetime.now(tz=timezone.utc).date()
     earliest = None
     for match in _DATE_RE.finditer(text):
-        raw = match.group()
+        # Strip ordinal suffixes ("July 3rd" -> "July 3") so strptime can parse;
+        # the date regex matches them but %d cannot.
+        raw = re.sub(r"(\d{1,2})(st|nd|rd|th)\b", r"\1", match.group(), flags=re.IGNORECASE)
         for fmt in (
             "%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y",
             "%B %d", "%b %d",
@@ -244,12 +299,20 @@ def _extract_earliest_date(text: str) -> datetime | None:
     return datetime(earliest.year, earliest.month, earliest.day, tzinfo=timezone.utc) if earliest else None
 
 
+def is_show_announcement(text: str) -> bool:
+    """True if the post reads as a live-show/ticket announcement (show keyword + a date).
+
+    Same signal used to detect show drafts for expiry, minus the past-date check.
+    Used to keep show announcements out of the website news section, which the
+    client does not want there.
+    """
+    return bool(_SHOW_KEYWORDS.search(text)) and _extract_earliest_date(text) is not None
+
+
 def _is_expired_show_announcement(text: str) -> bool:
-    if not _SHOW_KEYWORDS.search(text):
+    if not is_show_announcement(text):
         return False
     dt = _extract_earliest_date(text)
-    if dt is None:
-        return False
     return dt.date() < datetime.now(tz=timezone.utc).date()
 
 

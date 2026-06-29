@@ -16,13 +16,35 @@ from .config import (
 log = logging.getLogger(__name__)
 
 
+def _artist_url_from_fields(fields: dict) -> str:
+    """Find an act's loveproductions.com page URL among its Airtable fields.
+
+    The artists table carries the act's site link under a field whose exact name
+    varies (e.g. "LPI Web Link"); rather than hard-code it, scan every field's
+    value for a loveproductions.com URL. Returns "" when none is present.
+    Airtable lookup fields arrive as single-element lists, so those are unwrapped.
+    """
+    for val in fields.values():
+        if isinstance(val, list):
+            val = val[0] if val else ""
+        s = str(val).strip()
+        if "loveproductions.com" in s.lower() and s.lower().startswith("http"):
+            return s
+    return ""
+
+
 def fetch_airtable_artists() -> list[dict]:
-    """Fetch artists filtered by Marketing Priority, sorted by priority order."""
+    """Fetch artists filtered by Marketing Priority, sorted by priority order.
+
+    Returns dicts with name, priority, and artist_url (the act's loveproductions.com
+    page, used as a 'Read more' fallback for items with no external source URL).
+    All fields are requested (not a fixed subset) so the act page link can be found
+    regardless of its exact field name.
+    """
     priority_filter = ", ".join(
         f"{{Marketing Priority}}='{p}'" for p in AIRTABLE_PRIORITY_ORDER
     )
     params = {
-        "fields[]": ["Artist / Show Name", "Marketing Priority"],
         "filterByFormula": f"OR({priority_filter})",
     }
     try:
@@ -47,8 +69,9 @@ def fetch_airtable_artists() -> list[dict]:
     records = sorted(resp.json().get("records", []), key=_priority_key)
     return [
         {
-            "name":     r["fields"].get("Artist / Show Name", ""),
-            "priority": r["fields"].get("Marketing Priority", ""),
+            "name":       r["fields"].get("Artist / Show Name", ""),
+            "priority":   r["fields"].get("Marketing Priority", ""),
+            "artist_url": _artist_url_from_fields(r["fields"]),
         }
         for r in records
         if r["fields"].get("Artist / Show Name")

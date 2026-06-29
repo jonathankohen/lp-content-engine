@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import logging
+import re
 import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -26,8 +27,11 @@ from dotenv import load_dotenv
 from lp import config
 from lp.airtable import fetch_airtable_artists, fetch_upcoming_shows, show_to_topic
 from lp.ai import (
+    classify_show_announcements,
+    default_categories,
     filter_new_topics,
     format_performance_context,
+    generate_article,
     generate_posts,
     score_and_rank_topics,
     search_artist_news,
@@ -36,6 +40,7 @@ from lp.ai import (
 )
 from lp.buffer import (
     discover_buffer_profiles,
+    fetch_buffer_posts,
     fetch_top_performers,
     get_occupied_slots,
     post_draft_to_buffer,
@@ -46,6 +51,7 @@ from lp.airtable import fetch_venue_from_contracts
 from lp.loaders import load_artist_mappings, load_skill_graph
 from lp.scrape import fetch_og_image
 from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
+from lp.wordpress import publish_news_posts
 
 _EASTERN = ZoneInfo("America/New_York")
 _POST_HOUR = 10  # 10am ET
@@ -74,6 +80,218 @@ def _image_for(platform: str, og_image: str | None) -> str | None:
     if platform == "linkedin":
         return og_image
     return None
+
+
+def _news_button_url(topic: dict, artist_url: str) -> str:
+    """Where a news post's 'Read more' button points — always somewhere.
+
+    Source URL → ticket URL → the act's loveproductions.com page → the homepage.
+    """
+    return (
+        (topic.get("url") or "").strip()
+        or (topic.get("ticket_url") or "").strip()
+        or (artist_url or "").strip()
+        or config.LP_HOMEPAGE
+    )
+
+
+def _build_news_post(
+    topic: dict,
+    skill_graph: str,
+    og_image: str | None,
+    artist_url: str,
+) -> dict | None:
+    """Generate a website article for a topic and package it for the LP News plugin.
+
+    Returns the payload dict (or None if article generation fails / is capped).
+    The dedup key prefers the source URL, then the show sheet key, then the headline.
+
+    Show announcements are deliberately excluded from the website news section
+    (the client does not want them there), so any ``upcoming_show`` topic returns
+    None before any Claude call.
+    """
+    if topic.get("hook_type") == "upcoming_show":
+        log.info("Skipping news post for show announcement: %s", topic.get("headline", "")[:70])
+        return None
+    article = generate_article(
+        topic, skill_graph, default_categories(topic.get("hook_type", ""))
+    )
+    if not article:
+        return None
+    key = (
+        (topic.get("url") or "").strip()
+        or (topic.get("sheet_key") or "").strip()
+        or topic.get("headline", "").strip()
+    )
+    # Featured image: ONLY the source article's own image (og:image). We never
+    # fall back to the artist's profile photo or the LP placeholder — if the
+    # article has no image, the post is drafted imageless and handled manually.
+    return {
+        "key":          key,
+        "title":        article["title"],
+        "body":         article["body"],
+        "categories":   article["categories"],
+        "button_url":   _news_button_url(topic, artist_url),
+        "button_label": "Read more",
+        "image_url":    og_image or "",
+    }
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+_CTA_LABELS = r"read more|full story(?: here)?|get tickets|tickets|more here|link"
+
+
+def _first_url(text: str) -> str:
+    """First http(s) URL in text, with trailing punctuation trimmed."""
+    m = _URL_RE.search(text or "")
+    return m.group(0).rstrip(".,);]") if m else ""
+
+
+def _strip_source_urls(text: str) -> str:
+    """Remove URLs (and their CTA-label prefixes like 'Read more:') from text.
+
+    Used when reconstructing an article body from a social post so the raw link
+    doesn't leak into the website body — the 'Read more' button carries it.
+    """
+    t = text or ""
+    # Whole "Read more: <url>" style lines first, then any stray URLs, then any
+    # now-dangling CTA labels left behind.
+    t = re.sub(rf"(?im)^\s*(?:{_CTA_LABELS})\s*[:\-]?\s*https?://\S+\s*$", "", t)
+    t = _URL_RE.sub("", t)
+    t = re.sub(rf"(?im)^\s*(?:{_CTA_LABELS})\s*[:\-]?\s*$", "", t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+def _artist_name_variants(name: str) -> list[str]:
+    """Lowercased name variants to match against post text (full name, the part
+    before a colon/dash/"w/", and a ", The" → "The …" flip). Variants shorter
+    than 5 chars are dropped to avoid spurious substring hits."""
+    n = (name or "").strip()
+    variants = {n}
+    if n.lower().endswith(", the"):
+        base = re.sub(r",\s*the\s*$", "", n, flags=re.IGNORECASE)
+        variants.update({base, f"The {base}"})
+    for sep in (":", " - ", " w/", " with "):
+        if sep in n:
+            variants.add(n.split(sep)[0])
+    out: list[str] = []
+    for v in variants:
+        v = v.strip().lower()
+        if len(v) >= 5 and v not in out:
+            out.append(v)
+    return out
+
+
+def _match_artist_url(text: str, artists: list[dict], mappings: dict) -> str:
+    """Best-effort: find the act a post is about and return its loveproductions.com
+    page URL. Tries the tribute act name (and variants) first, then the original
+    artist name. Returns "" when nothing matches."""
+    t = (text or "").lower()
+    for a in artists:
+        if any(v in t for v in _artist_name_variants(a["name"])):
+            return a.get("artist_url", "")
+    for a in artists:
+        orig = (mappings.get(a["name"], "") or "").strip().lower()
+        if len(orig) >= 5 and orig in t:
+            return a.get("artist_url", "")
+    return ""
+
+
+def _buffer_posts_to_news(
+    posts: list[dict],
+    skill_graph: str,
+    artists: list[dict],
+    mappings: dict,
+    dry_run: bool,
+) -> None:
+    """Convert a list of Buffer Facebook posts into website news drafts and publish.
+
+    Each post's text is rebuilt into a long-form article via generate_article().
+    The source URL (extracted from the body) becomes the 'Read more' button and
+    seeds the featured image (og:image). When there's no source URL, the post is
+    matched to an act so the button points to that act's page; the featured image
+    is always the article's own og:image and never falls back to a profile photo
+    or placeholder — imageless articles are drafted for manual handling. Deduped
+    by source URL (falling back to the Buffer post id) so re-runs and the weekly
+    pipeline never double-post the same story.
+    """
+    # Show announcements don't belong in the website news section. Backfilled
+    # topics carry no hook_type, so classify the posts (one Haiku call for the
+    # batch) and skip any flagged as a live-event/show announcement.
+    show_flags = classify_show_announcements([p.get("text", "") for p in posts])
+
+    news_posts: list[dict] = []
+    for p, is_show in zip(posts, show_flags):
+        text = p.get("text", "")
+        if not text.strip():
+            continue
+        if is_show:
+            log.info("Skipping show announcement (not website news): %.70s", text.replace("\n", " "))
+            continue
+        url = _first_url(text)
+        artist_url = _match_artist_url(text, artists, mappings)
+        topic = {
+            "artist":          "",
+            "original_artist": "",
+            "headline":        "",
+            "summary":         _strip_source_urls(text),
+            "url":             url,
+            "hook_type":       "",
+        }
+        og_image = fetch_og_image(url) if url else None
+        news_post = _build_news_post(topic, skill_graph, og_image, artist_url)
+        if not news_post:
+            continue
+        if not news_post["key"]:
+            news_post["key"] = f"buffer_{p['id']}"
+        news_posts.append(news_post)
+        log.info("  prepared: %s [%s]", news_post["title"][:70], ", ".join(news_post["categories"]))
+
+    if news_posts:
+        publish_news_posts(news_posts, dry_run=dry_run)
+    log.info(
+        "=== Backfill complete. %d post(s) prepared | Est. cost: $%.4f ===",
+        len(news_posts),
+        config.estimated_cost_usd,
+    )
+
+
+def backfill_news_from_buffer(dry_run: bool = False) -> None:
+    """Convert the current Buffer Facebook drafts into website news posts.
+
+    Facebook is the universal channel (every topic routes to it) and its body
+    carries the source URL, so one news post per FB draft = one per topic (no
+    cross-platform duplicates).
+    """
+    config.load_env()
+    skill_graph = load_skill_graph()
+    artists = fetch_airtable_artists()
+    mappings = load_artist_mappings()
+    drafts = fetch_buffer_posts(services={"facebook"}, statuses=("draft",))
+    if not drafts:
+        log.info("No Facebook drafts found in Buffer to convert.")
+        return
+    log.info("Found %d Facebook draft(s) to convert to news posts", len(drafts))
+    _buffer_posts_to_news(drafts, skill_graph, artists, mappings, dry_run)
+
+
+def backfill_news_from_week(days: int = 7, dry_run: bool = False) -> None:
+    """Convert the past ``days`` of *published* Buffer Facebook posts into news posts.
+
+    Pulls Facebook posts with status 'sent' whose sentAt falls within the window.
+    Facebook is the universal channel so this is one news post per published topic.
+    """
+    config.load_env()
+    skill_graph = load_skill_graph()
+    artists = fetch_airtable_artists()
+    mappings = load_artist_mappings()
+    since = datetime.now(tz=_EASTERN) - timedelta(days=days)
+    sent = fetch_buffer_posts(services={"facebook"}, statuses=("sent",), since=since)
+    if not sent:
+        log.info("No Facebook posts sent in the past %d day(s).", days)
+        return
+    log.info("Found %d Facebook post(s) sent in the past %d day(s) to convert", len(sent), days)
+    _buffer_posts_to_news(sent, skill_graph, artists, mappings, dry_run)
 
 
 def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
@@ -117,6 +335,7 @@ def _fill_with_facts(
     perf_context: str,
     buffer_profiles: dict,
     dry_run: bool,
+    news_posts: list[dict],
 ) -> None:
     """Fill remaining week slots with Instagram + Facebook-only fact posts (trivia / historical).
 
@@ -181,6 +400,9 @@ def _fill_with_facts(
                 )
             else:
                 log.warning("  %s draft FAILED — see error above", platform)
+        news_post = _build_news_post(item, skill_graph, og_image, artist.get("artist_url", ""))
+        if news_post:
+            news_posts.append(news_post)
         scheduled_topics.append(item)
 
 
@@ -220,6 +442,8 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
         return
 
     all_new_topics: list[dict] = []
+    news_posts: list[dict] = []  # website draft posts, sent to LP News at the end
+    act_url = {a["name"]: a.get("artist_url", "") for a in artists}
 
     top_performers = fetch_top_performers(n=3)
     perf_context = format_performance_context(top_performers)
@@ -287,6 +511,9 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                     log.info("  %s show draft queued (%d chars)", platform, len(text))
             else:
                 log.warning("  %s show draft FAILED — see error above", platform)
+        news_post = _build_news_post(topic, skill_graph, og_image, act_url.get(topic["artist"], ""))
+        if news_post:
+            news_posts.append(news_post)
         used.add(topic["sheet_key"])
         all_new_topics.append(topic)
         mark_show_used(show, topic["sheet_key"], dry_run=dry_run)
@@ -382,6 +609,9 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 else:
                     log.warning("  %s draft FAILED — see error above", platform)
 
+            news_post = _build_news_post(topic, skill_graph, og_image, act_url.get(topic.get("_act", ""), ""))
+            if news_post:
+                news_posts.append(news_post)
             scheduled_topics.append(topic)
 
         # Phase 4: fill remaining slots with original-artist trivia (Instagram + Facebook only)
@@ -398,6 +628,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 perf_context=perf_context,
                 buffer_profiles=buffer_profiles,
                 dry_run=dry_run,
+                news_posts=news_posts,
             )
 
             # Phase 5: fill any still-remaining slots with pre-1990 historical facts (IG + FB only)
@@ -413,10 +644,16 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
                 perf_context=perf_context,
                 buffer_profiles=buffer_profiles,
                 dry_run=dry_run,
+                news_posts=news_posts,
             )
 
         all_new_topics.extend(scheduled_topics)
         mark_topics_used(scheduled_topics, dry_run=dry_run)
+
+    # ── Website news posts (loveproductions.com via the LP News plugin) ────────
+    if news_posts:
+        log.info("Publishing %d news post(s) to loveproductions.com...", len(news_posts))
+        publish_news_posts(news_posts, dry_run=dry_run)
 
     log.info(
         "=== Run complete. Topics processed: %d | Est. cost: $%.4f ===",
@@ -458,6 +695,19 @@ if __name__ == "__main__":
         "--artist",
         metavar="NAME",
         help="Run the full pipeline for a single artist (skips Airtable fetch)",
+    )
+    parser.add_argument(
+        "--news-from-buffer",
+        action="store_true",
+        help="Convert the current Buffer Facebook drafts into website news posts and exit",
+    )
+    parser.add_argument(
+        "--news-from-week",
+        nargs="?",
+        type=int,
+        const=7,
+        metavar="DAYS",
+        help="Convert the past week's published Buffer Facebook posts into website news posts and exit (optional DAYS, default 7)",
     )
     args = parser.parse_args()
 
@@ -503,6 +753,14 @@ if __name__ == "__main__":
                 text = (p.get("text") or "")[:120]
                 print(f"  [{platform}] score={score}  id={p.get('id', '')}")
                 print(f"  {text!r}\n")
+        sys.exit(0)
+
+    if args.news_from_buffer:
+        backfill_news_from_buffer(dry_run=args.dry_run)
+        sys.exit(0)
+
+    if args.news_from_week is not None:
+        backfill_news_from_week(days=args.news_from_week, dry_run=args.dry_run)
         sys.exit(0)
 
     main(dry_run=args.dry_run, single_artist=args.artist or "")

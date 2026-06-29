@@ -23,7 +23,12 @@ def search_artist_news(tribute: str, original: str) -> list[dict]:
         f"bands, cover acts, or spin-off/successor acts performing under a related name "
         f"(e.g. a deceased artist's backing band continuing to tour independently). "
         f"Only include news about the original named artist, not about associated acts "
-        f"that are now separate performing entities."
+        f"that are now separate performing entities. "
+        f"HARD RULE: NEVER return an original artist's own tour, concert, show, residency, "
+        f"festival appearance, or any live-performance announcement. We never promote the "
+        f"original artist's live dates — only the tribute act's. For the original artists, "
+        f"only return non-live news (album/release, award, biopic, anniversary, milestone, "
+        f"passing, etc.) and set is_live_event to false for those items."
         if original
         else ""
     )
@@ -38,6 +43,8 @@ def search_artist_news(tribute: str, original: str) -> list[dict]:
         "Each object in the array must have these exact keys: "
         "headline (string), url (string), summary (1-2 sentence string), "
         "hook_type (one of: 'upcoming_show', 'tribute_news', 'original_artist_news'), "
+        "is_live_event (boolean: true if the news is primarily a concert, tour, show, "
+        "residency, festival appearance, or other live-performance announcement), "
         "artist (the exact name of the tribute act or original artist this news is about). "
         f"IMPORTANT: If the news is primarily about a specific show, concert date, or live event, "
         f"only include it if that show date is strictly in the future (after {today}). "
@@ -75,10 +82,23 @@ def search_artist_news(tribute: str, original: str) -> list[dict]:
         log.error("JSON parse error for %s news search: %s", tribute, exc)
         return []
 
+    # HARD RULE: never announce an original artist's own shows/tours. Drop any
+    # original-artist item flagged as a live event, regardless of what the model
+    # classified hook_type as. We only ever promote the tribute act's live dates.
+    kept = []
     for item in items:
         item.setdefault("original_artist", original)
-    log.info("Found %d news items for %s", len(items), tribute)
-    return items
+        is_original = item.get("hook_type") == "original_artist_news"
+        if is_original and item.get("is_live_event"):
+            log.info(
+                "Dropping original-artist live-event item (never news): %s",
+                item.get("headline", "")[:60],
+            )
+            continue
+        kept.append(item)
+
+    log.info("Found %d news items for %s", len(kept), tribute)
+    return kept
 
 
 _EXCLUSIVE_PRIORITIES = {"Top of Roster", "Exclusive"}
@@ -160,6 +180,71 @@ def score_and_rank_topics(topics: list[dict]) -> list[dict]:
     scored.sort(key=lambda t: t["_score"], reverse=True)
     log.info("Scored %d topic(s), %d passed threshold", len(topics), len(scored))
     return scored
+
+
+def classify_show_announcements(texts: list[str]) -> list[bool]:
+    """Flag which posts are live-event/show announcements (one Haiku call for the batch).
+
+    Used by the website-news backfill, where reconstructed topics carry no
+    hook_type. A post is a show announcement if its primary purpose is to promote
+    attendance at a specific upcoming live event at a venue on a date — a concert,
+    show, residency, festival, or personal/live appearance. General artist news
+    that merely mentions the tribute act's name or a release date is NOT a show
+    announcement. On any failure, returns all-False (nothing skipped) so the
+    backfill degrades to its prior behaviour rather than silently dropping news.
+    """
+    if not texts:
+        return []
+    if not config.under_cost_cap("show classification"):
+        return [False] * len(texts)
+
+    numbered = "\n\n".join(f"[{i}]\n{t}" for i, t in enumerate(texts))
+    prompt = (
+        "Each item below is a social media post. Decide, for each, whether it is a "
+        "SHOW ANNOUNCEMENT: a post whose primary purpose is to promote attendance at "
+        "a specific upcoming live event at a venue on a date — a concert, show, "
+        "residency, festival, or a personal/live appearance.\n"
+        "A post is NOT a show announcement if it is general news (a new release, "
+        "award, anniversary, interview, obituary, trivia, etc.), even if it mentions "
+        "a tribute act's name, the word 'concert', or a release date.\n\n"
+        f"Posts (0-indexed):\n{numbered}\n\n"
+        "Return ONLY a JSON array of objects, one per post, like "
+        "[{\"index\": 0, \"show\": true}, ...]. No other text."
+    )
+
+    config.claude_throttle()
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    try:
+        raw = client.messages.with_raw_response.create(
+            model=config.SEARCH_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resp = raw.parse()
+        config.claude_call_done(dict(raw.headers))
+        config.track_cost(resp, config.SEARCH_MODEL)
+    except Exception as exc:
+        log.error("Show classification error: %s — treating all as non-shows", exc)
+        return [False] * len(texts)
+
+    text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
+    text = re.sub(r"```(?:json)?\s*", "", text)
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        log.warning("Could not parse show classification — treating all as non-shows")
+        return [False] * len(texts)
+    try:
+        items = json.loads(match.group())
+    except json.JSONDecodeError:
+        log.warning("Show classification JSON parse error — treating all as non-shows")
+        return [False] * len(texts)
+
+    flags = [False] * len(texts)
+    for item in items:
+        i = item.get("index")
+        if isinstance(i, int) and 0 <= i < len(texts):
+            flags[i] = bool(item.get("show"))
+    return flags
 
 
 def filter_new_topics(found: list[dict], used: set[str]) -> list[dict]:
@@ -375,3 +460,129 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     except json.JSONDecodeError as exc:
         log.error("JSON parse error in content generation: %s", exc)
         return None
+
+
+# ── Website news posts ────────────────────────────────────────────────────────
+
+# The only categories the LP News WordPress plugin accepts. Claude must choose
+# from this list; anything else is dropped server-side.
+NEWS_CATEGORIES = [
+    "Celebration",
+    "Celebrity",
+    "Theatre",
+    "Tour",
+    "Condolences",
+    "Festival",
+    "Interview",
+    "Sold Out",
+    "Tribute",
+    "TV Show",
+    "Uncategorized",
+]
+
+# Deterministic starting category per hook type. Claude then verifies and
+# adds/removes to fit the actual story (e.g. an obituary → Condolences, an
+# interview piece → Interview, a sold-out show → Sold Out).
+_HOOK_CATEGORY_DEFAULTS = {
+    "tribute_news": ["Tribute"],
+    "original_artist_news": ["Celebrity"],
+    "upcoming_show": ["Tour"],
+    "trivia": ["Tribute"],
+    "historical_fact": ["Celebrity"],
+}
+
+
+def default_categories(hook_type: str) -> list[str]:
+    """Deterministic default category list for a topic's hook type."""
+    return list(_HOOK_CATEGORY_DEFAULTS.get(hook_type, ["Uncategorized"]))
+
+
+def generate_article(topic: dict, skill_graph: str, default_cats: list[str] | None = None) -> dict | None:
+    """Generate a website news article for a topic.
+
+    Returns {"title": str, "body": str, "categories": list[str]} or None. The
+    body is a few short paragraphs of plain text (blank-line separated), in LP
+    brand voice, with NO source URL in the text — the "Read more" button carries
+    the link. Categories are chosen from NEWS_CATEGORIES, seeded by ``default_cats``
+    and adjusted by Claude to fit the story. Gated by the same cost cap as
+    generate_posts().
+    """
+    if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
+        topic.get("headline", "")
+    ):
+        return None
+
+    seed = default_cats if default_cats is not None else default_categories(topic.get("hook_type", ""))
+    user_prompt = (
+        "Write a short website news article for the Love Productions site "
+        "(loveproductions.com) based on this topic:\n\n"
+        f"Tribute Act: {topic.get('artist', '')}\n"
+        f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
+        f"Headline: {topic.get('headline', '')}\n"
+        f"Summary: {topic.get('summary', '')}\n"
+        f"Hook Type: {topic.get('hook_type', '')}\n\n"
+        "Follow the content skill graph (voice, banned words, humanizer rules, "
+        "one em dash maximum). This is a website article, NOT a social caption: "
+        "write 2–4 short paragraphs of flowing prose. Do NOT include hashtags, "
+        "emoji, or any raw URL in the body (a 'Read more' button handles the link "
+        "separately).\n"
+        "If the story announces an upcoming show, performance, or event, you MUST "
+        "state the show date explicitly in the article (and the city/venue when "
+        "known). Do NOT, however, point readers to a specific show, date, or venue "
+        "that has ALREADY occurred — for past events, write about the artist and "
+        "their broader story instead.\n"
+        "Do NOT add a call-to-action telling readers to visit a website, go to "
+        "'loveproductions.com', or 'click the button/see below' for tickets, the "
+        "venue, or 'full event details' — the reader is already on the Love "
+        "Productions site and a button handles the link. End on the substance of "
+        "the story, never on such a directive.\n\n"
+        "Also choose 1–3 categories that best fit this story. You MUST pick only "
+        f"from this exact list: {', '.join(NEWS_CATEGORIES)}.\n"
+        f"Suggested starting point (adjust as the story warrants): {', '.join(seed)}.\n\n"
+        "Return ONLY a JSON object with these exact keys: title, body, categories. "
+        "`title` is the article headline (concise, no clickbait). `body` is the full "
+        "article text with paragraphs separated by blank lines. `categories` is an "
+        "array of strings drawn only from the list above. No text outside the JSON."
+    )
+
+    config.claude_throttle()
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    try:
+        raw = client.messages.with_raw_response.create(
+            model=config.CONTENT_MODEL,
+            max_tokens=config.MAX_TOKENS,
+            system=skill_graph,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        resp = raw.parse()
+        config.claude_call_done(dict(raw.headers))
+        config.track_cost(resp, config.CONTENT_MODEL)
+    except Exception as exc:
+        log.error("Article generation error for '%s': %s", topic.get("headline"), exc)
+        return None
+
+    text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
+    text = re.sub(r"```(?:json)?\s*", "", text)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        log.error("No JSON in article generation response for '%s'", topic.get("headline"))
+        return None
+    try:
+        article = json.loads(match.group())
+    except json.JSONDecodeError as exc:
+        log.error("JSON parse error in article generation: %s", exc)
+        return None
+
+    # Keep only allowed categories (case-insensitive); fall back to the seed.
+    allowed = {c.lower(): c for c in NEWS_CATEGORIES}
+    cats = []
+    for c in article.get("categories", []) or []:
+        canonical = allowed.get(str(c).strip().lower())
+        if canonical and canonical not in cats:
+            cats.append(canonical)
+    if not cats:
+        cats = seed or ["Uncategorized"]
+    article["categories"] = cats
+    article["title"] = (article.get("title") or topic.get("headline", "")).strip()
+    article["body"] = (article.get("body") or topic.get("summary", "")).strip()
+    return article
