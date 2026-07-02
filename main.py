@@ -275,6 +275,27 @@ def backfill_news_from_buffer(dry_run: bool = False) -> None:
     _buffer_posts_to_news(drafts, skill_graph, artists, mappings, dry_run)
 
 
+def backfill_news_from_queue(dry_run: bool = False) -> None:
+    """Convert the current Buffer Facebook *queue* into website news posts.
+
+    Targets posts with status 'scheduled' — i.e. approved and waiting in the
+    queue to go out, distinct from unreviewed 'draft's and already-'sent' posts.
+    Facebook is the universal channel (every topic routes to it) and its body
+    carries the source URL, so one news post per FB queued post = one per topic
+    (no cross-platform duplicates).
+    """
+    config.load_env()
+    skill_graph = load_skill_graph()
+    artists = fetch_airtable_artists()
+    mappings = load_artist_mappings()
+    queued = fetch_buffer_posts(services={"facebook"}, statuses=("scheduled",))
+    if not queued:
+        log.info("No Facebook posts in the Buffer queue to convert.")
+        return
+    log.info("Found %d queued Facebook post(s) to convert to news posts", len(queued))
+    _buffer_posts_to_news(queued, skill_graph, artists, mappings, dry_run)
+
+
 def backfill_news_from_week(days: int = 7, dry_run: bool = False) -> None:
     """Convert the past ``days`` of *published* Buffer Facebook posts into news posts.
 
@@ -702,6 +723,11 @@ if __name__ == "__main__":
         help="Convert the current Buffer Facebook drafts into website news posts and exit",
     )
     parser.add_argument(
+        "--news-from-queue",
+        action="store_true",
+        help="Convert the current Buffer Facebook queue (scheduled posts) into website news posts and exit",
+    )
+    parser.add_argument(
         "--news-from-week",
         nargs="?",
         type=int,
@@ -757,6 +783,10 @@ if __name__ == "__main__":
 
     if args.news_from_buffer:
         backfill_news_from_buffer(dry_run=args.dry_run)
+        sys.exit(0)
+
+    if args.news_from_queue:
+        backfill_news_from_queue(dry_run=args.dry_run)
         sys.exit(0)
 
     if args.news_from_week is not None:

@@ -13,7 +13,7 @@ can fall back gracefully.
 
 import logging
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import requests
 
@@ -83,62 +83,4 @@ def fetch_og_image(url: str) -> str | None:
     _cache[url] = result
     if result:
         log.info("og:image found for %s -> %s", url, result)
-    return result
-
-
-# A loveproductions.com artist page has no og:image tag; its act photo is the
-# first real /wp-content/uploads image in the markup. We skip favicons, logos,
-# tiny thumbnails (e.g. -32x32), and full-bleed *background* images (named
-# bkgd/bkg/backgd) — the act's square promo image comes right after — and we
-# require the page's own host so we never grab a stale staging-CDN copy.
-_UPLOAD_IMG_RE = re.compile(
-    r"https?://[^\"'\s)]+/wp-content/uploads/[^\"'\s)]+\.(?:jpg|jpeg|png|webp)",
-    re.IGNORECASE,
-)
-_IMG_EXCLUDE_RE = re.compile(
-    r"(icon|logo|favicon|cropped-lpi|sprite|placeholder|"
-    r"bkgd|bkg|backgd|background|-\d{2,3}x\d{2,3}\.)",
-    re.IGNORECASE,
-)
-_artist_img_cache: dict[str, str | None] = {}
-
-
-def fetch_artist_image(url: str) -> str | None:
-    """Return an artist page's act photo (first non-background upload), or None.
-
-    Used as the featured-image fallback for a news post when the source article
-    has no og:image — we'd rather show the act's own photo from their
-    loveproductions.com page than the generic LP logo placeholder. Cheap (one
-    cached GET + regex, no AI). Never raises.
-    """
-    url = (url or "").strip()
-    if not url:
-        return None
-    if url in _artist_img_cache:
-        return _artist_img_cache[url]
-
-    host = urlparse(url).netloc.lower()
-    result: str | None = None
-    try:
-        resp = requests.get(
-            url, timeout=_TIMEOUT, headers={"User-Agent": _UA}, allow_redirects=True
-        )
-        if resp.status_code == 200 and resp.text:
-            for m in _UPLOAD_IMG_RE.finditer(resp.text):
-                cand = m.group(0)
-                # Same host as the page (avoids stale staging-CDN copies) and not
-                # an icon/logo/background/thumbnail.
-                if host and urlparse(cand).netloc.lower() != host:
-                    continue
-                if _IMG_EXCLUDE_RE.search(cand):
-                    continue
-                result = cand
-                break
-    except Exception as exc:  # noqa: BLE001 — any failure is a graceful miss
-        log.info("artist image scrape failed for %s: %s", url, exc)
-        result = None
-
-    _artist_img_cache[url] = result
-    if result:
-        log.info("artist image for %s -> %s", url, result)
     return result
