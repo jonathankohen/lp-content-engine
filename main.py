@@ -48,6 +48,7 @@ from lp.buffer import (
     test_buffer,
 )
 from lp.airtable import fetch_venue_from_contracts
+from lp.feeds import load_feed_items, search_artist_feeds
 from lp.loaders import load_artist_mappings, load_skill_graph
 from lp.scrape import fetch_og_image
 from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
@@ -433,7 +434,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 
-def main(dry_run: bool = False, single_artist: str = "") -> None:
+def main(dry_run: bool = False, single_artist: str = "", days: int | None = None) -> None:
     config.load_env()
 
     # Uncomment to delete expired show announcement drafts from Buffer at the start of each run:
@@ -473,6 +474,9 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
 
     # ── Compute week slots before show announcements so shows claim the earliest ones ──
     all_slots = get_week_slots()
+    if days is not None:
+        all_slots = all_slots[:days]
+        log.info("Limiting run to the first %d day slot(s)", days)
     occupied = (
         get_occupied_slots() if not dry_run else set()
     )
@@ -544,6 +548,7 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
     week_slots = week_slots[show_slots_used:]
 
     # Phase 1: collect all candidate topics across every artist
+    feed_items = load_feed_items()  # whitelisted music-news RSS, fetched once
     all_candidates: list[dict] = []
     for artist in artists:
         name = artist["name"]
@@ -551,7 +556,17 @@ def main(dry_run: bool = False, single_artist: str = "") -> None:
         log.info("--- Searching: %s [%s]", name, artist["priority"])
 
         found = search_artist_news(name, original)
-        new_topics = filter_new_topics(found, used)
+        found += search_artist_feeds(name, original, feed_items)
+        # Web search and a feed can surface the same URL — dedup within this
+        # artist's batch before the run-wide filter (which dedups vs. `used`).
+        seen_keys: set[str] = set()
+        deduped = []
+        for item in found:
+            key = item.get("url", "").strip() or item.get("headline", "").strip()
+            if key and key not in seen_keys:
+                seen_keys.add(key)
+                deduped.append(item)
+        new_topics = filter_new_topics(deduped, used)
 
         if not new_topics:
             log.info("No new topics for %s", name)
@@ -693,6 +708,12 @@ if __name__ == "__main__":
         help="Log outputs, skip Sheets and Buffer writes",
     )
     parser.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Cap the run to the first N day slots (default: full 7-day week)",
+    )
+    parser.add_argument(
         "--test-airtable",
         action="store_true",
         help="Print Airtable artist list and exit",
@@ -793,4 +814,4 @@ if __name__ == "__main__":
         backfill_news_from_week(days=args.news_from_week, dry_run=args.dry_run)
         sys.exit(0)
 
-    main(dry_run=args.dry_run, single_artist=args.artist or "")
+    main(dry_run=args.dry_run, single_artist=args.artist or "", days=args.days)
