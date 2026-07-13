@@ -91,17 +91,17 @@ def _delete_post(post_id: str) -> bool:
         """
         mutation DeletePost($input: DeletePostInput!) {
           deletePost(input: $input) {
-            ... on PostActionSuccess { post { id } }
-            ... on MutationError { message }
+            ... on DeletePostSuccess { id }
+            ... on VoidMutationError { message }
           }
         }
         """,
         {"input": {"id": post_id}},
-    ).get("data", {}).get("deletePost", {})
-    if "message" in result:
-        print(f"  ERROR deleting {post_id}: {result['message']}")
-        return False
-    return True
+    ).get("data", {}).get("deletePost") or {}
+    if "id" in result:
+        return True
+    print(f"  ERROR deleting {post_id}: {result.get('message') or 'no response'}")
+    return False
 
 
 # ── Expired show purge ────────────────────────────────────────────────────────

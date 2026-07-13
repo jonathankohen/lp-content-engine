@@ -352,18 +352,22 @@ def purge_expired_show_drafts(dry_run: bool = False) -> None:
             """
             mutation DeletePost($input: DeletePostInput!) {
               deletePost(input: $input) {
-                ... on PostActionSuccess { post { id } }
-                ... on MutationError { message }
+                ... on DeletePostSuccess { id }
+                ... on VoidMutationError { message }
               }
             }
             """,
             {"input": {"id": post["id"]}},
-        ).get("data", {}).get("deletePost", {})
-        if "message" in result:
-            log.error("Failed to delete post %s: %s", post["id"], result["message"])
-        else:
+        ).get("data", {}).get("deletePost") or {}
+        if "id" in result:
             log.info("Deleted expired draft %s", post["id"])
             deleted += 1
+        else:
+            log.error(
+                "Failed to delete post %s: %s",
+                post["id"],
+                result.get("message") or "no response",
+            )
 
     log.info(
         "purge_expired_show_drafts: %d post(s) %s",

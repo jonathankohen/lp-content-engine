@@ -362,8 +362,9 @@ def _fill_with_facts(
     """Fill remaining week slots with Instagram + Facebook-only fact posts (trivia / historical).
 
     Only acts with an original-artist mapping that haven't already been scheduled this run are
-    eligible. ``search_fn`` is a callable ``(act_name, original, slot) -> list[dict]``.
-    Mutates ``scheduled_topics`` and ``used`` in place.
+    eligible. ``search_fn`` is a callable ``(act_name, original, slot_date) -> list[dict]``.
+    A ``None`` slot means "queue this draft" (news-only mode); the search still needs a real
+    date for context, so today (ET) is used. Mutates ``scheduled_topics`` and ``used`` in place.
     """
     if not remaining_slots:
         return
@@ -375,7 +376,8 @@ def _fill_with_facts(
     for slot, artist in zip(remaining_slots, candidates):
         original = mappings[artist["name"]]
         log.info("--- %s: %s [%s]", label, artist["name"], artist["priority"])
-        found = search_fn(artist["name"], original, slot)
+        search_date = slot if slot is not None else datetime.now(_EASTERN)
+        found = search_fn(artist["name"], original, search_date)
         new_items = filter_new_topics(found, used)
         if not new_items:
             log.info("No %s found for %s", label.lower(), artist["name"])
@@ -389,7 +391,7 @@ def _fill_with_facts(
             "Generating %s: %s (slot=%s)",
             label.lower(),
             item.get("headline", "")[:80],
-            slot.strftime("%a %b %d"),
+            slot.strftime("%a %b %d") if slot else "queue",
         )
         posts = generate_posts(item, skill_graph, perf_context)
         if not posts:
@@ -414,10 +416,10 @@ def _fill_with_facts(
             )
             if ok:
                 log.info(
-                    "  %s %s scheduled %s (%d chars)",
+                    "  %s %s %s (%d chars)",
                     platform,
                     label.lower(),
-                    slot.strftime("%a %b %d %I:%M%p %Z"),
+                    slot.strftime("scheduled %a %b %d %I:%M%p %Z") if slot else "queued",
                     len(text),
                 )
             else:
@@ -434,7 +436,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 
-def main(dry_run: bool = False, single_artist: str = "", days: int | None = None) -> None:
+def main(
+    dry_run: bool = False,
+    single_artist: str = "",
+    days: int | None = None,
+    news_count: int | None = None,
+) -> None:
     config.load_env()
 
     # Uncomment to delete expired show announcement drafts from Buffer at the start of each run:
@@ -472,24 +479,36 @@ def main(dry_run: bool = False, single_artist: str = "", days: int | None = None
     if top_performers:
         log.info("Loaded %d top-performing post(s) as style context", len(top_performers))
 
-    # ── Compute week slots before show announcements so shows claim the earliest ones ──
-    all_slots = get_week_slots()
-    if days is not None:
-        all_slots = all_slots[:days]
-        log.info("Limiting run to the first %d day slot(s)", days)
-    occupied = (
-        get_occupied_slots() if not dry_run else set()
-    )
-    week_slots = [s for s in all_slots if s.date().isoformat() not in occupied]
-    log.info(
-        "Week slots: %d available, %d already occupied in Buffer",
-        len(week_slots),
-        len(all_slots) - len(week_slots),
-    )
+    # ── Determine posting targets ─────────────────────────────────────────────
+    # News-only mode (--news-count): create up to N news posts, queued to Buffer with
+    # no fixed schedule, ignoring occupied week slots and skipping show announcements.
+    # A None slot flows through the pipeline as "queue this draft" (no scheduled_at).
+    # Normal mode: one post per open day slot this week (shows claim the earliest ones).
+    if news_count is not None:
+        week_slots: list = [None] * news_count
+        log.info(
+            "News-only mode: up to %d news post(s), queued to Buffer "
+            "(no fixed schedule, shows skipped)",
+            news_count,
+        )
+    else:
+        all_slots = get_week_slots()
+        if days is not None:
+            all_slots = all_slots[:days]
+            log.info("Limiting run to the first %d day slot(s)", days)
+        occupied = (
+            get_occupied_slots() if not dry_run else set()
+        )
+        week_slots = [s for s in all_slots if s.date().isoformat() not in occupied]
+        log.info(
+            "Week slots: %d available, %d already occupied in Buffer",
+            len(week_slots),
+            len(all_slots) - len(week_slots),
+        )
     show_slots_used = 0
 
-    # ── Show announcements from Airtable calendar ─────────────────────────────
-    for show in fetch_upcoming_shows():
+    # ── Show announcements from Airtable calendar (skipped in news-only mode) ──
+    for show in (fetch_upcoming_shows() if news_count is None else []):
         topic = show_to_topic(show, mappings)
         if topic["sheet_key"] in used:
             log.info("Show already drafted: %s", topic["headline"])
@@ -580,6 +599,17 @@ def main(dry_run: bool = False, single_artist: str = "", days: int | None = None
             used.add(key)  # prevent cross-artist duplicates
         all_candidates.extend(new_topics)
 
+    # News-only mode is "news, not shows": drop tribute-act live-date items that the news
+    # search classified as show announcements (hook_type 'upcoming_show') — the same items
+    # the website step already skips. Freed slots backfill with real news/trivia/historical
+    # so the run still targets N posts. (Normal weekly runs keep these to promote gigs.)
+    if news_count is not None and all_candidates:
+        before = len(all_candidates)
+        all_candidates = [t for t in all_candidates if t.get("hook_type") != "upcoming_show"]
+        dropped = before - len(all_candidates)
+        if dropped:
+            log.info("News-only mode: dropped %d show-announcement topic(s) from candidates", dropped)
+
     if not all_candidates:
         log.info("No new topics found this week")
     elif not week_slots:
@@ -604,7 +634,7 @@ def main(dry_run: bool = False, single_artist: str = "", days: int | None = None
                 "Generating: %s (score=%.2f, slot=%s)",
                 headline,
                 topic.get("_score", 0),
-                slot.strftime("%a %b %d"),
+                slot.strftime("%a %b %d") if slot else "queue",
             )
 
             posts = generate_posts(topic, skill_graph, perf_context)
@@ -616,7 +646,7 @@ def main(dry_run: bool = False, single_artist: str = "", days: int | None = None
             platforms = ("instagram", "facebook") if is_ig_fb_only else ("linkedin", "instagram", "facebook")
             if is_ig_fb_only:
                 log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
-            effective_slot = slot if slot > datetime.now(_EASTERN) else None
+            effective_slot = slot if slot and slot > datetime.now(_EASTERN) else None
             og_image = fetch_og_image(topic.get("url", ""))
             for platform in platforms:
                 text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
@@ -739,6 +769,15 @@ if __name__ == "__main__":
         help="Run the full pipeline for a single artist (skips Airtable fetch)",
     )
     parser.add_argument(
+        "--news-count",
+        type=int,
+        default=None,
+        metavar="N",
+        help="News-only mode: create up to N news posts (artist news, then trivia/historical "
+        "to fill) queued to Buffer with no fixed schedule. Skips show announcements and ignores "
+        "occupied week slots.",
+    )
+    parser.add_argument(
         "--news-from-buffer",
         action="store_true",
         help="Convert the current Buffer Facebook drafts into website news posts and exit",
@@ -814,4 +853,9 @@ if __name__ == "__main__":
         backfill_news_from_week(days=args.news_from_week, dry_run=args.dry_run)
         sys.exit(0)
 
-    main(dry_run=args.dry_run, single_artist=args.artist or "", days=args.days)
+    main(
+        dry_run=args.dry_run,
+        single_artist=args.artist or "",
+        days=args.days,
+        news_count=args.news_count,
+    )
