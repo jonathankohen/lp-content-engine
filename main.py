@@ -29,6 +29,7 @@ from lp.airtable import fetch_airtable_artists, fetch_upcoming_shows, show_to_to
 from lp.ai import (
     classify_show_announcements,
     default_categories,
+    exclusivity_bonus,
     filter_new_topics,
     format_performance_context,
     generate_article,
@@ -505,9 +506,13 @@ def main(
             len(week_slots),
             len(all_slots) - len(week_slots),
         )
-    show_slots_used = 0
-
-    # ── Show announcements from Airtable calendar (skipped in news-only mode) ──
+    # ── Collect show announcements as scored candidates (skipped in news-only mode) ──
+    # Shows no longer claim slots up-front. Each becomes a topic with a baseline
+    # score (config.SHOW_BASE_SCORE + exclusivity bonus) and competes with news in
+    # one ranked pool below. Ticket/venue enrichment happens here; generation and
+    # Buffer posting happen later, once a show has actually won a slot.
+    priority_by_act = {a["name"]: a["priority"] for a in artists}
+    show_candidates: list[dict] = []
     for show in (fetch_upcoming_shows() if news_count is None else []):
         topic = show_to_topic(show, mappings)
         if topic["sheet_key"] in used:
@@ -524,48 +529,17 @@ def main(
             topic["headline"] = topic["headline"].replace(addr, venue_name)
             topic["summary"] = topic["summary"].replace(addr, venue_name)
             log.info("  Venue name: %s", venue_name)
-        log.info("Generating show announcement: %s", topic["headline"])
-        posts = generate_posts(topic, skill_graph, perf_context)
-        if not posts:
-            continue
-        slot = week_slots[show_slots_used] if show_slots_used < len(week_slots) else None
-        effective_slot = slot if slot and slot > datetime.now(_EASTERN) else None
-        og_image = fetch_og_image(topic.get("url", ""))
-        for platform in ("linkedin", "instagram", "facebook"):
-            text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
-            if not text:
-                log.warning("No %s post for '%s'", platform, topic["headline"])
-                continue
-            profile_id = buffer_profiles.get(platform, "")
-            if not profile_id and not dry_run:
-                log.warning("No Buffer profile for %s — skipping", platform)
-                continue
-            ok = post_draft_to_buffer(
-                text,
-                profile_id,
-                platform=platform,
-                dry_run=dry_run,
-                image=_image_for(platform, og_image),
-                scheduled_at=effective_slot,
-            )
-            if ok:
-                if effective_slot:
-                    log.info("  %s show draft scheduled %s (%d chars)", platform, effective_slot.strftime("%a %b %d %I:%M%p %Z"), len(text))
-                else:
-                    log.info("  %s show draft queued (%d chars)", platform, len(text))
-            else:
-                log.warning("  %s show draft FAILED — see error above", platform)
-        news_post = _build_news_post(topic, skill_graph, og_image, act_url.get(topic["artist"], ""))
-        if news_post:
-            news_posts.append(news_post)
-        used.add(topic["sheet_key"])
-        all_new_topics.append(topic)
-        mark_show_used(show, topic["sheet_key"], dry_run=dry_run)
-        show_slots_used += 1
+        priority = priority_by_act.get(topic["artist"], "")
+        topic["_is_show"] = True
+        topic["_show"] = show  # kept for mark_show_used() once scheduled
+        topic["_act"] = topic["artist"]  # diversity grouping key
+        topic["_priority"] = priority
+        topic["_score"] = config.SHOW_BASE_SCORE + exclusivity_bonus(priority, topic["artist"])
+        show_candidates.append(topic)
+    if show_candidates:
+        log.info("Collected %d upcoming show(s) as ranked candidate(s)", len(show_candidates))
 
     # ── Artist news pipeline ──────────────────────────────────────────────────
-    week_slots = week_slots[show_slots_used:]
-
     # Phase 1: collect all candidate topics across every artist
     feed_items = load_feed_items()  # whitelisted music-news RSS, fetched once
     all_candidates: list[dict] = []
@@ -610,28 +584,52 @@ def main(
         if dropped:
             log.info("News-only mode: dropped %d show-announcement topic(s) from candidates", dropped)
 
-    if not all_candidates:
+    if not all_candidates and not show_candidates:
         log.info("No new topics found this week")
     elif not week_slots:
-        log.warning("No open slots this week — skipping artist news posts")
+        log.warning("No open slots this week — skipping all posts")
     else:
-        # Phase 2: score, rank, drop below-threshold, pick top N with diversity
-        ranked = score_and_rank_topics(all_candidates)
-        selected = _select_with_diversity(ranked, len(week_slots))
+        # Phase 2: score news, merge with shows into ONE ranked pool, fill slots by
+        # score. Shows carry their baseline _score already; news is scored here.
+        # A strong/exclusive news story can now outrank a routine show for a slot,
+        # and when shows + news exceed the available slots the lowest-scoring items
+        # (show or news) are dropped.
+        ranked_news = score_and_rank_topics(all_candidates)
+        # A tribute-act gig date the news search surfaced (hook_type 'upcoming_show')
+        # is a show announcement, not news. Re-score it at the show baseline so it no
+        # longer gets the exclusivity-boosted news score — genuine news (releases,
+        # awards, original-artist news) can then outrank a routine gig date. These
+        # items still compete for and can win leftover slots. (In news-only mode they
+        # were already dropped from all_candidates above, so this is a no-op there.)
+        for t in ranked_news:
+            if t.get("hook_type") == "upcoming_show":
+                t["_score"] = config.SHOW_BASE_SCORE + exclusivity_bonus(
+                    t.get("_priority", ""), t.get("artist", "")
+                )
+        pool = show_candidates + ranked_news
+        pool.sort(key=lambda t: t.get("_score", 0), reverse=True)
+        selected = _select_with_diversity(pool, len(week_slots))
+        n_shows_sel = sum(1 for t in selected if t.get("_is_show"))
         log.info(
-            "Scheduling %d/%d topic(s) across %d slot(s)",
+            "Scheduling %d topic(s) across %d slot(s): %d show(s) + %d news "
+            "(from %d show + %d news candidate(s))",
             len(selected),
-            len(all_candidates),
             len(week_slots),
+            n_shows_sel,
+            len(selected) - n_shows_sel,
+            len(show_candidates),
+            len(all_candidates),
         )
 
-        # Phase 3: generate posts and schedule to Buffer
-        scheduled_topics: list[dict] = []
+        # Phase 3: generate posts and schedule to Buffer (shows and news unified)
+        scheduled_topics: list[dict] = []  # news + facts only (shows use mark_show_used)
         for i, topic in enumerate(selected):
             headline = topic.get("headline", "")[:80]
             slot = week_slots[i]
+            is_show = topic.get("_is_show", False)
             log.info(
-                "Generating: %s (score=%.2f, slot=%s)",
+                "Generating %s: %s (score=%.2f, slot=%s)",
+                "show" if is_show else "news",
                 headline,
                 topic.get("_score", 0),
                 slot.strftime("%a %b %d") if slot else "queue",
@@ -675,17 +673,29 @@ def main(
                 else:
                     log.warning("  %s draft FAILED — see error above", platform)
 
+            # _build_news_post returns None for upcoming_show topics (no website post
+            # for shows), so this is a no-op for shows and a real article for news.
             news_post = _build_news_post(topic, skill_graph, og_image, act_url.get(topic.get("_act", ""), ""))
             if news_post:
                 news_posts.append(news_post)
-            scheduled_topics.append(topic)
 
-        # Phase 4: fill remaining slots with original-artist trivia (Instagram + Facebook only)
-        if not single_artist:
+            if is_show:
+                mark_show_used(topic["_show"], topic["sheet_key"], dry_run=dry_run)
+                used.add(topic["sheet_key"])
+                all_new_topics.append(topic)
+            else:
+                scheduled_topics.append(topic)
+
+        # Phases 4 & 5: fill any slots left after shows + news with trivia, then
+        # historical facts (Instagram + Facebook only). Only the slots not taken by
+        # the ranked pool remain.
+        remaining_slots = week_slots[len(selected):]
+        if not single_artist and remaining_slots:
+            before = len(scheduled_topics)
             _fill_with_facts(
                 label="Trivia",
                 search_fn=lambda name, original, slot: search_trivia(name, original),
-                remaining_slots=week_slots[len(scheduled_topics):],
+                remaining_slots=remaining_slots,
                 artists=artists,
                 mappings=mappings,
                 scheduled_topics=scheduled_topics,
@@ -696,22 +706,23 @@ def main(
                 dry_run=dry_run,
                 news_posts=news_posts,
             )
+            remaining_slots = remaining_slots[len(scheduled_topics) - before:]
 
-            # Phase 5: fill any still-remaining slots with pre-1990 historical facts (IG + FB only)
-            _fill_with_facts(
-                label="Historical fact",
-                search_fn=search_historical_facts,
-                remaining_slots=week_slots[len(scheduled_topics):],
-                artists=artists,
-                mappings=mappings,
-                scheduled_topics=scheduled_topics,
-                used=used,
-                skill_graph=skill_graph,
-                perf_context=perf_context,
-                buffer_profiles=buffer_profiles,
-                dry_run=dry_run,
-                news_posts=news_posts,
-            )
+            if remaining_slots:
+                _fill_with_facts(
+                    label="Historical fact",
+                    search_fn=search_historical_facts,
+                    remaining_slots=remaining_slots,
+                    artists=artists,
+                    mappings=mappings,
+                    scheduled_topics=scheduled_topics,
+                    used=used,
+                    skill_graph=skill_graph,
+                    perf_context=perf_context,
+                    buffer_profiles=buffer_profiles,
+                    dry_run=dry_run,
+                    news_posts=news_posts,
+                )
 
         all_new_topics.extend(scheduled_topics)
         mark_topics_used(scheduled_topics, dry_run=dry_run)

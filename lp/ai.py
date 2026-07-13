@@ -106,6 +106,17 @@ _EXCLUSIVE_ACTS = {"Tony Danza", "The Rocket Man Show"}
 _SCORE_THRESHOLD = 0.40
 
 
+def exclusivity_bonus(priority: str, artist: str) -> float:
+    """+1.0 for Top of Roster / Exclusive acts (plus two hardcoded exceptions), else 0.0.
+
+    Single source of truth for the exclusivity boost, applied to both scored news
+    topics (below) and upcoming-show candidates (main.py) so the two compete fairly.
+    """
+    if priority in _EXCLUSIVE_PRIORITIES or artist in _EXCLUSIVE_ACTS:
+        return 1.0
+    return 0.0
+
+
 def score_and_rank_topics(topics: list[dict]) -> list[dict]:
     """Score all candidate topics in one Haiku call, apply exclusivity bonus, return sorted best-first."""
     if not topics:
@@ -172,8 +183,7 @@ def score_and_rank_topics(topics: list[dict]) -> list[dict]:
             continue
         priority = t.get("_priority", "")
         artist = t.get("artist", "")
-        if priority in _EXCLUSIVE_PRIORITIES or artist in _EXCLUSIVE_ACTS:
-            base += 1.0
+        base += exclusivity_bonus(priority, artist)
         t["_score"] = base
         scored.append(t)
 

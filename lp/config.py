@@ -41,6 +41,13 @@ LP_NEWS_SECRET = os.environ.get("LP_NEWS_SECRET", "")
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]
 SHOW_DAYS_AHEAD = 7
 
+# Baseline score assigned to an upcoming-show announcement when shows and news
+# compete for the same week slots (see main.py). Sits in the normal news-score
+# range so a strong/exclusive news story can outrank a routine show. The same
+# exclusivity bonus news gets (ai.exclusivity_bonus) is added on top for shows
+# by exclusive/top-of-roster acts. Tunable via env.
+SHOW_BASE_SCORE = float(os.environ.get("SHOW_BASE_SCORE", "0.75"))
+
 SEARCH_MODEL = "claude-haiku-4-5"
 CONTENT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
