@@ -119,7 +119,6 @@ def _build_news_post(
         topic,
         skill_graph,
         default_categories(topic.get("hook_type", "")),
-        artist_url=artist_url,
         appointment_url=config.STEVE_CALENDAR_LINK,
     )
     if not article:

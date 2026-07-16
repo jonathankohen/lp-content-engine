@@ -523,19 +523,18 @@ def generate_article(
     topic: dict,
     skill_graph: str,
     default_cats: list[str] | None = None,
-    artist_url: str = "",
     appointment_url: str = "",
 ) -> dict | None:
     """Generate a website news article for a topic.
 
     Returns {"title": str, "body": str, "categories": list[str]} or None. The
-    body is a few short paragraphs of prose in LP brand voice. The only links it
-    may contain are two inline HTML anchors — the tribute act's name (linked to
-    ``artist_url``, its loveproductions.com page) and "Steve Love" in the closing
-    booking CTA (linked to ``appointment_url``) — no other links or raw URLs; the
-    "Read more" button carries the source link. Categories are chosen from
-    NEWS_CATEGORIES, seeded by ``default_cats`` and adjusted by Claude to fit the
-    story. Gated by the same cost cap as generate_posts().
+    body is a few short paragraphs of prose in LP brand voice. The only link it
+    may contain is one inline HTML anchor — "this link" in the closing booking
+    CTA (pointed at ``appointment_url``, Steve's calendar). The article does NOT
+    link the tribute act's name or the source (the "Read more" button carries the
+    source link, and the reader is already on loveproductions.com). Categories are
+    chosen from NEWS_CATEGORIES, seeded by ``default_cats`` and adjusted by Claude
+    to fit the story. Gated by the same cost cap as generate_posts().
     """
     if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
         topic.get("headline", "")
@@ -545,33 +544,22 @@ def generate_article(
     # The tribute act name: prefer the Airtable act (_act) since for
     # original-artist news the `artist` field can be the original artist.
     tribute = (topic.get("_act") or topic.get("artist", "")).strip()
-    tribute_anchor = (
-        f'<a href="{artist_url}">{tribute}</a>' if (tribute and artist_url) else tribute
-    )
     this_link_anchor = (
         f'<a href="{appointment_url}">this link</a>' if appointment_url else "this link"
     )
     tie_in_instruction = ""
     if tribute:
-        link_rule = (
-            f"EVERY time the act's name '{tribute}' appears in the body — including in "
-            f"the booking sentence below — render it EXACTLY as this HTML hyperlink: "
-            f"{tribute_anchor} (never as plain text).\n"
-            if artist_url
-            else f"Mention the act by name ('{tribute}').\n"
-        )
         tie_in_instruction = (
             "\nTRIBUTE ACT TIE-IN AND BOOKING CTA (both are REQUIRED):\n"
             f"- The article MUST mention {tribute}, Love Productions' tribute act, at "
             "least once, connecting the news to the act naturally (e.g. how the act "
-            "carries this artist's music/spirit to stages today). "
-            f"{link_rule}"
+            "carries this artist's music/spirit to stages today). Write the act's name "
+            "as plain text — do NOT hyperlink it.\n"
             "- End the article with a short closing paragraph inviting bookings, "
             f'phrased like: "If you\'re interested in booking {tribute}, please follow '
             f'{this_link_anchor} to set up an appointment with Steve Love." Use that '
             'exact HTML hyperlink on the words "this link"; Steve Love stays plain text.\n'
-            "- The act-name hyperlink(s) and the \"this link\" anchor are the ONLY links "
-            "allowed anywhere in the body.\n"
+            "- The \"this link\" anchor is the ONLY link allowed anywhere in the body.\n"
         )
 
     seed = default_cats if default_cats is not None else default_categories(topic.get("hook_type", ""))
