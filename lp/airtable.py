@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from .artist_links import lookup_artist_url
 from .config import (
     AIRTABLE_API_KEY,
     AIRTABLE_BASE_ID,
@@ -67,15 +68,20 @@ def fetch_airtable_artists() -> list[dict]:
             return len(AIRTABLE_PRIORITY_ORDER)
 
     records = sorted(resp.json().get("records", []), key=_priority_key)
-    return [
-        {
-            "name":       r["fields"].get("Artist / Show Name", ""),
+    artists = []
+    for r in records:
+        name = r["fields"].get("Artist / Show Name", "")
+        if not name:
+            continue
+        # Airtable's own link wins; fall back to the prepopulated static map so a
+        # row missing the link field never yields a blank act page at runtime.
+        artist_url = _artist_url_from_fields(r["fields"]) or lookup_artist_url(name)
+        artists.append({
+            "name":       name,
             "priority":   r["fields"].get("Marketing Priority", ""),
-            "artist_url": _artist_url_from_fields(r["fields"]),
-        }
-        for r in records
-        if r["fields"].get("Artist / Show Name")
-    ]
+            "artist_url": artist_url,
+        })
+    return artists
 
 
 def fetch_upcoming_shows() -> list[dict]:

@@ -116,7 +116,11 @@ def _build_news_post(
         log.info("Skipping news post for show announcement: %s", topic.get("headline", "")[:70])
         return None
     article = generate_article(
-        topic, skill_graph, default_categories(topic.get("hook_type", ""))
+        topic,
+        skill_graph,
+        default_categories(topic.get("hook_type", "")),
+        artist_url=artist_url,
+        appointment_url=config.STEVE_CALENDAR_LINK,
     )
     if not article:
         return None
@@ -184,19 +188,19 @@ def _artist_name_variants(name: str) -> list[str]:
     return out
 
 
-def _match_artist_url(text: str, artists: list[dict], mappings: dict) -> str:
-    """Best-effort: find the act a post is about and return its loveproductions.com
-    page URL. Tries the tribute act name (and variants) first, then the original
-    artist name. Returns "" when nothing matches."""
+def _match_artist(text: str, artists: list[dict], mappings: dict) -> dict | None:
+    """Best-effort: find the act a post is about and return its Airtable artist
+    dict. Tries the tribute act name (and variants) first, then the original
+    artist name. Returns None when nothing matches."""
     t = (text or "").lower()
     for a in artists:
         if any(v in t for v in _artist_name_variants(a["name"])):
-            return a.get("artist_url", "")
+            return a
     for a in artists:
         orig = (mappings.get(a["name"], "") or "").strip().lower()
         if len(orig) >= 5 and orig in t:
-            return a.get("artist_url", "")
-    return ""
+            return a
+    return None
 
 
 def _buffer_posts_to_news(
@@ -231,7 +235,8 @@ def _buffer_posts_to_news(
             log.info("Skipping show announcement (not website news): %.70s", text.replace("\n", " "))
             continue
         url = _first_url(text)
-        artist_url = _match_artist_url(text, artists, mappings)
+        matched = _match_artist(text, artists, mappings)
+        artist_url = matched.get("artist_url", "") if matched else ""
         topic = {
             "artist":          "",
             "original_artist": "",
@@ -239,6 +244,9 @@ def _buffer_posts_to_news(
             "summary":         _strip_source_urls(text),
             "url":             url,
             "hook_type":       "",
+            # Tribute act the post is about, so the article can mention+link it
+            # and add the booking CTA (generate_article reads _act).
+            "_act":            matched["name"] if matched else "",
         }
         og_image = fetch_og_image(url) if url else None
         news_post = _build_news_post(topic, skill_graph, og_image, artist_url)

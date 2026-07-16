@@ -418,9 +418,20 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         if performance_context
         else ""
     )
+    # Tribute act name: prefer the Airtable act (_act) since for original-artist
+    # news the `artist` field can be the original artist.
+    tribute = (topic.get("_act") or topic.get("artist", "")).strip()
+    tribute_mention_instruction = (
+        f"IMPORTANT: Every platform post MUST mention the tribute act by name "
+        f"('{tribute}') at least once — even for original-artist news, trivia, or "
+        f"historical facts, tie the story back to {tribute}. (Social posts cannot "
+        f"hyperlink a name; just name the act in the copy.)\n\n"
+        if tribute
+        else ""
+    )
     user_prompt = (
         "Generate social media content for Love Productions based on this news topic:\n\n"
-        f"Tribute Act: {topic.get('artist', '')}\n"
+        f"Tribute Act: {tribute}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
         f"Headline: {topic.get('headline', '')}\n"
         f"{url_line}"
@@ -431,6 +442,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "Follow the content skill graph instructions exactly. Write all three platform posts "
         "in the repurposing chain order (LinkedIn first, then Instagram, then Facebook). "
         "Each post must think about the topic differently — not just reformatted.\n\n"
+        f"{tribute_mention_instruction}"
         "If a Ticket URL is provided, include it prominently in the Facebook post only "
         "as the call-to-action link (e.g., 'Get tickets: <url>'). Do NOT include the ticket link "
         "in the LinkedIn or Instagram posts. If not available, do not invent a link — omit entirely.\n\n"
@@ -507,45 +519,86 @@ def default_categories(hook_type: str) -> list[str]:
     return list(_HOOK_CATEGORY_DEFAULTS.get(hook_type, ["Uncategorized"]))
 
 
-def generate_article(topic: dict, skill_graph: str, default_cats: list[str] | None = None) -> dict | None:
+def generate_article(
+    topic: dict,
+    skill_graph: str,
+    default_cats: list[str] | None = None,
+    artist_url: str = "",
+    appointment_url: str = "",
+) -> dict | None:
     """Generate a website news article for a topic.
 
     Returns {"title": str, "body": str, "categories": list[str]} or None. The
-    body is a few short paragraphs of plain text (blank-line separated), in LP
-    brand voice, with NO source URL in the text — the "Read more" button carries
-    the link. Categories are chosen from NEWS_CATEGORIES, seeded by ``default_cats``
-    and adjusted by Claude to fit the story. Gated by the same cost cap as
-    generate_posts().
+    body is a few short paragraphs of prose in LP brand voice. The only links it
+    may contain are two inline HTML anchors — the tribute act's name (linked to
+    ``artist_url``, its loveproductions.com page) and "Steve Love" in the closing
+    booking CTA (linked to ``appointment_url``) — no other links or raw URLs; the
+    "Read more" button carries the source link. Categories are chosen from
+    NEWS_CATEGORIES, seeded by ``default_cats`` and adjusted by Claude to fit the
+    story. Gated by the same cost cap as generate_posts().
     """
     if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
         topic.get("headline", "")
     ):
         return None
 
+    # The tribute act name: prefer the Airtable act (_act) since for
+    # original-artist news the `artist` field can be the original artist.
+    tribute = (topic.get("_act") or topic.get("artist", "")).strip()
+    tribute_anchor = (
+        f'<a href="{artist_url}">{tribute}</a>' if (tribute and artist_url) else tribute
+    )
+    this_link_anchor = (
+        f'<a href="{appointment_url}">this link</a>' if appointment_url else "this link"
+    )
+    tie_in_instruction = ""
+    if tribute:
+        link_rule = (
+            f"EVERY time the act's name '{tribute}' appears in the body — including in "
+            f"the booking sentence below — render it EXACTLY as this HTML hyperlink: "
+            f"{tribute_anchor} (never as plain text).\n"
+            if artist_url
+            else f"Mention the act by name ('{tribute}').\n"
+        )
+        tie_in_instruction = (
+            "\nTRIBUTE ACT TIE-IN AND BOOKING CTA (both are REQUIRED):\n"
+            f"- The article MUST mention {tribute}, Love Productions' tribute act, at "
+            "least once, connecting the news to the act naturally (e.g. how the act "
+            "carries this artist's music/spirit to stages today). "
+            f"{link_rule}"
+            "- End the article with a short closing paragraph inviting bookings, "
+            f'phrased like: "If you\'re interested in booking {tribute}, please follow '
+            f'{this_link_anchor} to set up an appointment with Steve Love." Use that '
+            'exact HTML hyperlink on the words "this link"; Steve Love stays plain text.\n'
+            "- The act-name hyperlink(s) and the \"this link\" anchor are the ONLY links "
+            "allowed anywhere in the body.\n"
+        )
+
     seed = default_cats if default_cats is not None else default_categories(topic.get("hook_type", ""))
     user_prompt = (
         "Write a short website news article for the Love Productions site "
         "(loveproductions.com) based on this topic:\n\n"
-        f"Tribute Act: {topic.get('artist', '')}\n"
+        f"Tribute Act: {tribute}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
         f"Headline: {topic.get('headline', '')}\n"
         f"Summary: {topic.get('summary', '')}\n"
         f"Hook Type: {topic.get('hook_type', '')}\n\n"
         "Follow the content skill graph (voice, banned words, humanizer rules, "
         "one em dash maximum). This is a website article, NOT a social caption: "
-        "write 2–4 short paragraphs of flowing prose. Do NOT include hashtags, "
-        "emoji, or any raw URL in the body (a 'Read more' button handles the link "
-        "separately).\n"
+        "write 2–4 short paragraphs of flowing prose. Do NOT include hashtags or "
+        "emoji. Do NOT include any visible raw URL — the ONLY links permitted are "
+        "the two inline HTML anchors described below; a 'Read more' button handles "
+        "the source link separately.\n"
+        f"{tie_in_instruction}"
         "If the story announces an upcoming show, performance, or event, you MUST "
         "state the show date explicitly in the article (and the city/venue when "
         "known). Do NOT, however, point readers to a specific show, date, or venue "
         "that has ALREADY occurred — for past events, write about the artist and "
         "their broader story instead.\n"
-        "Do NOT add a call-to-action telling readers to visit a website, go to "
-        "'loveproductions.com', or 'click the button/see below' for tickets, the "
-        "venue, or 'full event details' — the reader is already on the Love "
-        "Productions site and a button handles the link. End on the substance of "
-        "the story, never on such a directive.\n\n"
+        "Aside from the required booking CTA above, do NOT add any other "
+        "call-to-action (no 'visit loveproductions.com', 'click the button/see "
+        "below', or 'full event details here' for tickets or the venue). The "
+        "booking invitation is the only permitted closing directive.\n\n"
         "Also choose 1–3 categories that best fit this story. You MUST pick only "
         f"from this exact list: {', '.join(NEWS_CATEGORIES)}.\n"
         f"Suggested starting point (adjust as the story warrants): {', '.join(seed)}.\n\n"

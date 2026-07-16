@@ -36,6 +36,11 @@ LINKEDIN_ANALYTICS_CSV = os.environ.get("LINKEDIN_ANALYTICS_CSV", "")
 LP_NEWS_URL = os.environ.get("LP_NEWS_URL", "")
 LP_NEWS_SECRET = os.environ.get("LP_NEWS_SECRET", "")
 
+# Steve Love's booking-appointment scheduling link. Website news articles end
+# with a booking call-to-action whose "Steve Love" anchor points here. When
+# unset, the CTA still appears but Steve's name is rendered as plain text.
+STEVE_CALENDAR_LINK = os.environ.get("STEVE_CALENDAR_LINK", "")
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]
