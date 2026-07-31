@@ -29,6 +29,7 @@ import anthropic
 from anthropic.types import TextBlock
 
 from . import config
+from .cards import display_act
 from .scrape import fetch_page_prose
 
 log = logging.getLogger(__name__)
@@ -199,7 +200,7 @@ def act_credential_stats(artist: dict, max_items: int = 1) -> list[dict]:
             return [{
                 "value":   f"{years}",
                 "label":   "years performing",
-                "context": f"{name} has been performing since {year}.",
+                "context": f"{display_act(name)} has been performing since {year}.",
                 "source":  url,
             }]
 

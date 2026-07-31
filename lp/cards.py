@@ -27,6 +27,7 @@ to ``post_draft_to_buffer``.
 import hashlib
 import logging
 import os
+import re
 import textwrap
 from io import BytesIO
 
@@ -335,9 +336,27 @@ def _footer_top(size: tuple[int, int], pad: int) -> int:
     return size[1] - pad - 52
 
 
+_INVERTED_RE = re.compile(r"^(.*?),\s*(the|a|an)$", re.I)
+
+
+def display_act(act: str) -> str:
+    """Un-invert a filing-order act name for display: 'Platters, The' -> 'The Platters'.
+
+    Airtable stores two acts filed alphabetically, which is right for a list and
+    wrong on a graphic: a card footer reading "PLATTERS, THE" looks like a
+    database error. Only the display layer changes; the stored name stays intact
+    because dedup keys, the artists.md mapping and the tour sheet tabs all match
+    on it.
+    """
+    act = (act or "").strip()
+    match = _INVERTED_RE.match(act)
+    return f"{match.group(2).title()} {match.group(1)}" if match else act
+
+
 def _finish(img: Image.Image, act: str, size: tuple[int, int],
             light: bool = False) -> Image.Image:
     """Draw the footer rule, act name and agency mark shared by every card."""
+    act = display_act(act)
     draw = ImageDraw.Draw(img)
     pad = int(size[0] * 0.066)
     draw.rectangle([0, size[1] - 10, size[0], size[1]], fill=RED)
