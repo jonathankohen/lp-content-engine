@@ -622,28 +622,6 @@ def render_tour_poster(
         widest = max((_text_width(draw, _place(r).upper(), city_font) for r in drawn), default=0)
         city_col = min(widest + int(dims[0] * 0.030), int(inner * 0.42))
 
-    def _clip(text: str, font, limit: int) -> str:
-        """Trim to fit, on a word boundary, with an ellipsis.
-
-        The old rule chopped two characters at a time and appended a full stop,
-        which produced "Newtown Theater, Newto." and "Allen Theatre & Backstag.",
-        both of which read as a rendering fault rather than an abbreviation.
-        """
-        if limit <= 0:
-            return ""
-        if _text_width(draw, text, font) <= limit:
-            return text
-        words = text.split()
-        while len(words) > 1:
-            words.pop()
-            candidate = " ".join(words).rstrip(",&-") + "…"
-            if _text_width(draw, candidate, font) <= limit:
-                return candidate
-        # A single word too wide for the column still has to be cut somewhere.
-        while text and _text_width(draw, text + "…", font) > limit:
-            text = text[:-1]
-        return text + "…" if text else ""
-
     def _venue_text(row: dict) -> str:
         """The venue with any city and state it repeats stripped off.
 
@@ -666,6 +644,69 @@ def render_tour_poster(
         if tail_words and all(w in allowed for w in tail_words):
             return head.strip() or venue
         return venue
+
+    # Horizontal fit. The type already shrinks to fit the number of rows; this
+    # does the same for the width, so a long venue name makes the whole list a
+    # little smaller instead of getting cut off. Scaling everything together
+    # keeps the rows aligned, where shrinking one row's venue would not.
+    def _columns(rf, cf):
+        dc = max(_text_width(draw, t, rf) for t in date_strs) + int(dims[0] * 0.030)
+        cc = 0
+        if venues:
+            widest = max((_text_width(draw, _place(r).upper(), cf) for r in drawn), default=0)
+            cc = min(widest + int(dims[0] * 0.030), int(inner * 0.42))
+        return dc, cc
+
+    def _overflow(cf, vf, dc, cc):
+        """Widest amount by which any row exceeds its column, 0 when all fit."""
+        worst = 0
+        for r in drawn:
+            if venues and _place(r):
+                need = _text_width(draw, _venue_text(r), vf) - (col_w - dc - cc)
+            elif venues:
+                need = _text_width(draw, (r.get("venue") or "").strip().upper(), cf) - (col_w - dc)
+            else:
+                need = _text_width(draw, _place(r).upper(), cf) - (col_w - dc)
+            worst = max(worst, need)
+        return worst
+
+    # Deliberately not named `size`: that is the caller's "poster"/"square"
+    # argument, and shadowing it puts the font size into the output filename,
+    # which would let a poster and a square render collide on one file.
+    type_px = row_font.size
+    while type_px > 15 and _overflow(city_font, venue_font, date_col, city_col) > 0:
+        type_px -= 1
+        row_font = _font("bold", type_px)
+        city_font = _font("bold", type_px)
+        venue_font = _font("regular", max(int(type_px * 0.92), 1))
+        date_col, city_col = _columns(row_font, city_font)
+
+    def _clip(text: str, font, limit: int) -> str:
+        """Trim to fit, on a word boundary, with an ellipsis.
+
+        The old rule chopped two characters at a time and appended a full stop,
+        which produced "Newtown Theater, Newto." and "Allen Theatre & Backstag.",
+        both of which read as a rendering fault rather than an abbreviation.
+        """
+        if limit <= 0:
+            return ""
+        if _text_width(draw, text, font) <= limit:
+            return text
+        # The horizontal-fit loop above shrinks the type until everything fits,
+        # so reaching here means even the minimum size was not enough. Logged
+        # because it should be rare, and is worth knowing about when it is not.
+        log.info("Tour poster: trimming over-long text %r", text[:60])
+        words = text.split()
+        while len(words) > 1:
+            words.pop()
+            candidate = " ".join(words).rstrip(",&-") + "…"
+            if _text_width(draw, candidate, font) <= limit:
+                return candidate
+        # A single word too wide for the column still has to be cut somewhere.
+        while text and _text_width(draw, text + "…", font) > limit:
+            text = text[:-1]
+        return text + "…" if text else ""
+
 
     top_y = y
     for i, (row, date_str) in enumerate(zip(drawn, date_strs)):
