@@ -597,7 +597,23 @@ def render_tour_poster(
     # on a single-year run it is noise.
     multiyear = len({d["date"].year for d in drawn}) > 1
     fmt = "%b %d '%y" if multiyear else "%b %d"
-    date_strs = [d["date"].strftime(fmt).upper() for d in drawn]
+
+    def _date_str(row: dict) -> str:
+        """One date, or a range for a residency merged by collapse_residencies.
+
+        A run of nights at one venue prints as "SEP 08-14" rather than seven
+        identical rows, which is how a real tour admat handles it and which
+        stops one residency hiding every other city on the poster.
+        """
+        start = row["date"].strftime(fmt).upper()
+        end = row.get("date_end")
+        if not end:
+            return start
+        # Same month: "SEP 08-14". Across months: "SEP 28-OCT 04".
+        tail = end.strftime("%d" if end.month == row["date"].month else fmt).upper()
+        return f"{start}-{tail}"
+
+    date_strs = [_date_str(d) for d in drawn]
     date_col = max(_text_width(draw, s, row_font) for s in date_strs) + int(dims[0] * 0.030)
 
     def _place(row: dict) -> str:

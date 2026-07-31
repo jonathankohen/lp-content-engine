@@ -67,6 +67,7 @@ from lp.artist_links import lookup_artist_url
 from lp.cards import key_art_for, render_quote_card, render_stat_card, render_tour_poster
 from lp.scrape import fetch_act_photo, fetch_og_image
 from lp.sheets import (
+    collapse_residencies,
     lookup_ticket_url,
     mark_show_used,
     mark_topics_used,
@@ -148,7 +149,9 @@ def _post_tour_carousel(
         name = (artist.get("name") or "").strip()
         if not name:
             continue
-        dates = upcoming_tour_dates(name)
+        # Collapse residencies first: a week at one venue is one line on the
+        # poster, not seven, so the other cities still get a row.
+        dates = collapse_residencies(upcoming_tour_dates(name))
         # An act with one or two dates does not read as "on tour", and a thin
         # slide undercuts the whole point of the format.
         if len(dates) < min_dates:

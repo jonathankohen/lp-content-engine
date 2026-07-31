@@ -145,6 +145,32 @@ def _normalize_region(region: str) -> str:
     return _STATE_ABBR.get(cleaned.lower(), cleaned.upper() if len(cleaned) == 2 else cleaned)
 
 
+def collapse_residencies(dates: list[dict]) -> list[dict]:
+    """Merge consecutive dates at one venue into a single row with a date range.
+
+    A residency inside a tour ("Sep 8 to 14 at Cafe Carlyle") is eight identical
+    rows on a poster, which crowds out the other cities and reads as a rendering
+    fault. Real tour admats print it as one line, so this does the same: the
+    merged row keeps the first date, gains ``date_end``, and the renderer can
+    show "SEP 08-14". Rows that are not part of a run pass through untouched.
+
+    Consecutive is judged by position in the (already date-sorted) list, not by
+    calendar adjacency, so a two-night stand with a night off still merges.
+    """
+    out: list[dict] = []
+    for item in dates:
+        key = (item.get("venue", "").strip().lower(), item.get("city", "").strip().lower())
+        if out:
+            prev = out[-1]
+            prev_key = (prev.get("venue", "").strip().lower(), prev.get("city", "").strip().lower())
+            if key == prev_key and key != ("", ""):
+                prev["date_end"] = item["date"]
+                prev["dates_merged"] = prev.get("dates_merged", 1) + 1
+                continue
+        out.append(dict(item))
+    return out
+
+
 def upcoming_tour_dates(show_title: str, limit: int = 14) -> list[dict]:
     """Future dates for an act from the tour dates sheet, soonest first.
 
