@@ -114,6 +114,8 @@ python clean_up.py --apply  # delete expired show drafts
 
 **Two models.** Haiku (`SEARCH_MODEL`) for news search and anything cheap/mechanical. Sonnet (`CONTENT_MODEL`) for content generation. Never swap them without considering cost impact.
 
+**API refusals abort the run's Claude work (2026-07-31).** Every search helper catches its exception and returns `[]`, which is indistinguishable from "nothing found". When a real run hit the account usage limit, it walked the entire roster logging "No trivia found" for each act and reported success with **0 topics**, which would have been a silently empty week. `config.record_api_exception()` now flags account-level refusals (matched on "usage limit", "credit balance", "quota", "billing", since Anthropic returns these as **400 invalid_request_error**, not 429) and sets `config.api_blocked`. `under_cost_cap()` returns False while that is set, and since every Claude call is already gated on it, one check short-circuits the whole run. Transient failures (timeouts, bad JSON) deliberately do **not** set it.
+
 **Cost cap.** Default $5/run (`COST_CAP_USD`). Each full topic costs ~$0.06 (1 search + 1 generate). Cap is checked before every Claude call via `config.under_cost_cap()`. Mutable cost state lives in `lp/config.py` (`estimated_cost_usd`, `claude_call_count`) and is mutated directly from `lp/ai.py`.
 
 **Buffer rate limits.** Two distinct limits:

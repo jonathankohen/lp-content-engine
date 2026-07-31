@@ -219,6 +219,7 @@ def act_credential_stats(artist: dict, max_items: int = 1) -> list[dict]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:  # noqa: BLE001
+        config.record_api_exception(exc, "credential stats")
         log.error("Credential stat extraction failed for %s: %s", name, exc)
         return []
 

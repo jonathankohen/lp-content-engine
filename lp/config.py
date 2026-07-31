@@ -128,7 +128,44 @@ def track_cost(resp, model: str) -> None:
     log.debug("Est. cost so far: $%.4f / $%.2f cap", estimated_cost_usd, COST_CAP_USD)
 
 
+# Set when the Anthropic API refuses further calls for the rest of the day
+# (account usage limit or quota, not our own COST_CAP_USD). Every search helper
+# swallows its exception and returns [], which is indistinguishable from "no
+# results found", so without this a limited run walks the whole roster logging
+# "No trivia found" for each act and reports success with an empty week.
+api_blocked = False
+
+# Anthropic phrases these as 400 invalid_request_error rather than 429, so they
+# cannot be caught by status code alone.
+_BLOCKING_ERRORS = ("usage limit", "credit balance", "quota", "billing")
+
+
+def record_api_exception(exc: Exception, label: str = "") -> None:
+    """Flag account-level API refusals so the rest of the run stops calling out.
+
+    Only refusals that will persist for the whole run set the flag. A one-off
+    timeout or a malformed response is a normal failure and must not abort
+    everything else.
+    """
+    global api_blocked
+    message = str(exc).lower()
+    if any(term in message for term in _BLOCKING_ERRORS):
+        if not api_blocked:
+            log.error(
+                "Anthropic API is refusing calls (%s). Skipping all remaining "
+                "Claude work this run rather than reporting empty results as "
+                "'nothing found'.%s",
+                exc,
+                f" Triggered by: {label}" if label else "",
+            )
+        api_blocked = True
+
+
 def under_cost_cap(label: str) -> bool:
+    # Single choke point: every Claude call is gated on this, so one check here
+    # short-circuits the whole run once the API has refused us.
+    if api_blocked:
+        return False
     if estimated_cost_usd >= COST_CAP_USD:
         log.warning(
             "Cost cap $%.2f reached (est. $%.4f), skipping %s",

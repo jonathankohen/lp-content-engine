@@ -101,6 +101,7 @@ def search_artist_news(tribute: str, original: str) -> list[dict]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "News search")
         log.error("News search error for %s: %s", tribute, exc)
         return []
 
@@ -188,6 +189,7 @@ def score_and_rank_topics(topics: list[dict]) -> list[dict]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Topic scoring")
         log.error("Topic scoring error: %s, using original order", exc)
         return topics
 
@@ -268,6 +270,7 @@ def classify_show_announcements(texts: list[str]) -> list[bool]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Show classification")
         log.error("Show classification error: %s, treating all as non-shows", exc)
         return [False] * len(texts)
 
@@ -353,6 +356,7 @@ def search_historical_facts(tribute: str, original: str, slot_date: datetime) ->
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Historical fact search")
         log.error("Historical fact search error for %s: %s", tribute, exc)
         return []
 
@@ -409,6 +413,7 @@ def search_trivia(tribute: str, original: str) -> list[dict]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Trivia search")
         log.error("Trivia search error for %s: %s", tribute, exc)
         return []
 
@@ -482,6 +487,7 @@ def search_testimonials(tribute: str, original: str = "") -> list[dict]:
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.SEARCH_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Testimonial search")
         log.error("Testimonial search error for %s: %s", tribute, exc)
         return []
 
@@ -765,6 +771,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.CONTENT_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Content generation")
         log.error("Content generation error for '%s': %s", topic.get("headline"), exc)
         return None
 
@@ -925,6 +932,7 @@ def generate_article(
         config.claude_call_done(dict(raw.headers))
         config.track_cost(resp, config.CONTENT_MODEL)
     except Exception as exc:
+        config.record_api_exception(exc, "Article generation")
         log.error("Article generation error for '%s': %s", topic.get("headline"), exc)
         return None
 
