@@ -34,6 +34,7 @@ from io import BytesIO
 import requests
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
+from .artist_links import display_act
 from .scrape import _TIMEOUT, _UA
 
 log = logging.getLogger(__name__)
@@ -334,23 +335,6 @@ def _fit_art(src: str, box: tuple[int, int], light: bool = False) -> Image.Image
 def _footer_top(size: tuple[int, int], pad: int) -> int:
     """Y coordinate where the act-name footer begins; content must stay above it."""
     return size[1] - pad - 52
-
-
-_INVERTED_RE = re.compile(r"^(.*?),\s*(the|a|an)$", re.I)
-
-
-def display_act(act: str) -> str:
-    """Un-invert a filing-order act name for display: 'Platters, The' -> 'The Platters'.
-
-    Airtable stores two acts filed alphabetically, which is right for a list and
-    wrong on a graphic: a card footer reading "PLATTERS, THE" looks like a
-    database error. Only the display layer changes; the stored name stays intact
-    because dedup keys, the artists.md mapping and the tour sheet tabs all match
-    on it.
-    """
-    act = (act or "").strip()
-    match = _INVERTED_RE.match(act)
-    return f"{match.group(2).title()} {match.group(1)}" if match else act
 
 
 def _finish(img: Image.Image, act: str, size: tuple[int, int],

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 
+from .artist_links import display_act
 from .config import SHEETS_ID, TOUR_DATES_SHEET_ID
 
 log = logging.getLogger(__name__)
@@ -106,13 +107,21 @@ def _tour_tab_rows(show_title: str) -> list[list[str]]:
     Sweden: The Music of ABBA"), so the match is a case-insensitive substring.
     Returns [] when the sheet, credentials, or tab are unavailable.
     """
-    title_lower = (show_title or "").lower()
-    if not title_lower:
+    if not (show_title or "").strip():
         return []
-    for tab, rows in load_tour_tabs().items():
+
+    # Airtable files two acts alphabetically ("Platters, The") while the sheet
+    # tabs are named the natural way ("The Platters"), so a plain substring test
+    # matched neither direction and both acts silently resolved to zero dates.
+    # They were missing from every tour poster and carousel until 2026-07-31.
+    # Both spellings are tried, longest tab first so a short tab name cannot
+    # claim an act whose name merely contains it.
+    candidates = {show_title.lower(), display_act(show_title).lower()}
+    for tab, rows in sorted(load_tour_tabs().items(), key=lambda kv: -len(kv[0])):
         name = tab.lower()
-        if name in title_lower or title_lower.startswith(name):
+        if any(name in title or title.startswith(name) for title in candidates):
             return rows
+
     log.debug("No tour dates tab found for '%s'", show_title)
     return []
 

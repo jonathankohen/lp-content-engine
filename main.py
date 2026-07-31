@@ -63,7 +63,7 @@ from lp.buffer import (
 from lp.airtable import fetch_venue_from_contracts
 from lp.feeds import load_feed_items, search_artist_feeds
 from lp.loaders import load_artist_mappings, load_skill_graph
-from lp.artist_links import lookup_artist_url
+from lp.artist_links import display_act, lookup_artist_url
 from lp.cards import key_art_for, render_quote_card, render_stat_card, render_tour_poster
 from lp.scrape import fetch_act_photo, fetch_og_image
 from lp.sheets import (
@@ -222,6 +222,63 @@ def _post_tour_carousel(
             drafted = True
             log.info("  %s tour carousel (%d slide(s))", platform, len(payload))
     return drafted
+
+
+def _verify_dates(artists: list[dict], max_rows: int = 8) -> None:
+    """Print exactly the tour dates that would be published, for hand-checking.
+
+    A cancelled show stays in the tour sheet until someone removes it (The
+    Platters' 2026-10-03 Spartanburg date was cancelled and still listed), and
+    the ticketing sites cannot be checked automatically: Ticketmaster answers a
+    server-side request with 401 and Bandsintown with 403.
+
+    So this narrows the manual job instead of pretending to automate it. Only
+    the rows that actually reach a poster are listed, which is at most
+    ``max_rows`` per act after residencies are collapsed, rather than every date
+    in the sheet. Rows flagged NO-TICKET or FAR-OUT deserve the first look: a
+    date with no ticket link was never confirmed on sale, and a date many months
+    out is the most likely to move.
+    """
+    horizon = datetime.now().date() + timedelta(days=270)
+    total = shown = flagged = 0
+
+    for artist in artists:
+        name = (artist.get("name") or "").strip()
+        if not name:
+            continue
+        dates = collapse_residencies(upcoming_tour_dates(name))
+        total += len(dates)
+        if not dates:
+            continue
+
+        print(f"\n{display_act(name)}")
+        for i, d in enumerate(dates):
+            on_poster = i < max_rows
+            flags = []
+            if not d.get("ticket_url"):
+                flags.append("NO-TICKET")
+            if d["date"] > horizon:
+                flags.append("FAR-OUT")
+            if on_poster:
+                shown += 1
+                if flags:
+                    flagged += 1
+
+            span = d["date"].strftime("%Y-%m-%d")
+            if d.get("date_end"):
+                span += f" to {d['date_end'].strftime('%Y-%m-%d')}"
+            place = ", ".join(p for p in (d.get("city", ""), d.get("region", "")) if p)
+            print(
+                f"  {'*' if on_poster else ' '} {span:<24} {place:<24}"
+                f" {d.get('venue', '')[:34]:<34} {' '.join(flags)}"
+            )
+
+    print(
+        f"\n{shown} date(s) would be published across all posters "
+        f"({total} in the sheet). {flagged} of the published rows are flagged.\n"
+        "Rows marked * appear on a poster; those are the only ones worth checking.\n"
+        "Ticket pages cannot be verified automatically (Ticketmaster 401, Bandsintown 403)."
+    )
 
 
 def _with_credential_stats(topic: dict, name: str, artist_url: str) -> dict:
@@ -1299,6 +1356,11 @@ if __name__ == "__main__":
         help="Cut a short Vimeo clip per act (or one act with --artist) for review, then exit",
     )
     parser.add_argument(
+        "--verify-dates",
+        action="store_true",
+        help="Print the tour dates that would actually be published, for hand-checking, then exit",
+    )
+    parser.add_argument(
         "--tour-carousel",
         action="store_true",
         help="Draft the 'tours on sale now' carousel (one tour-date slide per act) and exit",
@@ -1313,6 +1375,11 @@ if __name__ == "__main__":
         names = [args.artist] if args.artist else [a["name"] for a in fetch_airtable_artists()]
         for name in names:
             print(f"  {name}: {clip_for_act(name) or 'no usable video'}")
+        sys.exit(0)
+
+    if args.verify_dates:
+        config.load_env()
+        _verify_dates(fetch_airtable_artists())
         sys.exit(0)
 
     if args.tour_carousel:

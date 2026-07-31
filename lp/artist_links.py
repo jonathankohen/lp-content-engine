@@ -1,3 +1,4 @@
+import re
 """Static fallback map of tribute act → loveproductions.com page URL.
 
 Every act page lives under the site's ``/title-item/`` directory. The canonical
@@ -54,3 +55,19 @@ def lookup_artist_url(name: str) -> str:
     spaces some Airtable names carry (e.g. "Platters, The ").
     """
     return _INDEX.get((name or "").strip().casefold(), "")
+
+
+_INVERTED_RE = re.compile(r"^(.*?),\s*(the|a|an)$", re.I)
+
+
+def display_act(act: str) -> str:
+    """Un-invert a filing-order act name: 'Platters, The' -> 'The Platters'.
+
+    Airtable files two acts alphabetically. That is right for a list and wrong
+    everywhere else: it looks like a database error on a card, and it silently
+    broke the tour-sheet lookup, whose tabs are named the natural way ("The
+    Platters"), so those acts resolved to zero dates.
+    """
+    act = (act or "").strip()
+    match = _INVERTED_RE.match(act)
+    return f"{match.group(2).title()} {match.group(1)}" if match else act
