@@ -29,7 +29,7 @@ TOUR_DATES_SHEET_ID = os.environ.get("TOUR_DATES_SHEET_ID", "")
 META_PAGE_ACCESS_TOKEN = os.environ.get("META_PAGE_ACCESS_TOKEN", "")
 LINKEDIN_ANALYTICS_CSV = os.environ.get("LINKEDIN_ANALYTICS_CSV", "")
 
-# LP News WordPress plugin (loveproductions.com) — drafts a news post per topic.
+# LP News WordPress plugin (loveproductions.com), drafts a news post per topic.
 # Set LP_NEWS_URL to the plugin's publish endpoint and LP_NEWS_SECRET to the
 # secret shown on its Settings → LP News page. When LP_NEWS_URL is unset, the
 # website-posting step is skipped (Buffer drafting is unaffected).
@@ -53,6 +53,26 @@ SHOW_DAYS_AHEAD = 7
 # by exclusive/top-of-roster acts. Tunable via env.
 SHOW_BASE_SCORE = float(os.environ.get("SHOW_BASE_SCORE", "0.75"))
 
+# "Back by popular demand" is powerful precisely because it is rare, so
+# re-booking posts are capped hard per run (client direction 2026-07-28).
+REBOOKING_MAX_PER_RUN = int(os.environ.get("REBOOKING_MAX_PER_RUN", "1"))
+
+# How many of the week's slots to hold back for LinkedIn-eligible buyer-proof
+# content (re-bookings, testimonials, act spotlights, agency posts) when the
+# ranked pool of shows and news cannot fill them itself. A busy week is usually
+# all shows and original-artist news, none of which reach LinkedIn, so without
+# this the LinkedIn channel stays empty. Set to 0 to let shows and news take
+# every slot again.
+LINKEDIN_RESERVED_SLOTS = int(os.environ.get("LINKEDIN_RESERVED_SLOTS", "2"))
+
+# Hard cap on show announcements per week (client direction 2026-07-31: "we
+# shouldn't flood the drafts with show announcements, maybe max three a week").
+# Shows and gig-date news both score SHOW_BASE_SCORE plus the exclusivity bonus,
+# which outranks nearly all real news, so the ranked pool alone will happily fill
+# every slot with them. This cap is what lets news, trivia and historical facts
+# win a slot. Applies to Airtable calendar shows and gig-date news together.
+MAX_SHOWS_PER_WEEK = int(os.environ.get("MAX_SHOWS_PER_WEEK", "3"))
+
 SEARCH_MODEL = "claude-haiku-4-5"
 CONTENT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
@@ -61,6 +81,22 @@ BUFFER_API_URL = "https://api.buffer.com"
 SKILL_GRAPH_DIR = Path(__file__).parent.parent / "content-skill-graph"
 _IG_PLACEHOLDER = "https://www.loveproductions.com/wp-content/uploads/2022/03/LPI_logo_RGB_Red_BLK.png"
 LP_HOMEPAGE = "https://www.loveproductions.com"
+
+# Vimeo: the agency's own video library, source for short clips (see lp/vimeo.py).
+# The token needs the "video_files" scope or the API omits download links.
+VIMEO_ACCESS_TOKEN = os.getenv("VIMEO_ACCESS_TOKEN", "")
+VIMEO_CLIENT_ID = os.getenv("VIMEO_CLIENT_ID", "")
+VIMEO_CLIENT_SECRET = os.getenv("VIMEO_CLIENT_SECRET", "")
+
+# Where lp.cards writes rendered PNGs before they are uploaded. Filenames are a
+# hash of the card's content, so this doubles as a render cache across runs.
+CARD_DIR = os.getenv("CARD_DIR", os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "cards"))
+
+# Downloaded Vimeo sources and the clips cut from them. Sources are cached here
+# between runs, since re-downloading a 30MB promo to trim 15 seconds is waste.
+VIDEO_DIR = os.getenv("VIDEO_DIR", os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "video"))
 
 # ── Cost tracking ─────────────────────────────────────────────────────────────
 
@@ -95,7 +131,7 @@ def track_cost(resp, model: str) -> None:
 def under_cost_cap(label: str) -> bool:
     if estimated_cost_usd >= COST_CAP_USD:
         log.warning(
-            "Cost cap $%.2f reached (est. $%.4f) — skipping %s",
+            "Cost cap $%.2f reached (est. $%.4f), skipping %s",
             COST_CAP_USD,
             estimated_cost_usd,
             label,
@@ -143,7 +179,7 @@ def claude_call_done(headers: dict) -> None:
             next_at = reset_dt.timestamp() + _THROTTLE_BUFFER
             _save_throttle(next_at)
             log.info(
-                "Token reset at %s — next call allowed in %.0fs",
+                "Token reset at %s, next call allowed in %.0fs",
                 reset_str,
                 max(0, next_at - time.time()),
             )

@@ -35,14 +35,14 @@ All posts have the same goal: to get buyers to book our acts. Please make every 
 
 ## Trivia about Artist Represented by Tribute
 
-A surprising, lesser-known fact about the original artist — not tied to any date, not breaking news. The goal is an "I didn't know that" reaction that makes people share, then ties back to why our tribute act is worth booking.
+A surprising, lesser-known fact about the original artist that's not tied to any date, and isn't breaking news. The goal is an "I didn't know that" reaction that makes people share, then ties back to why our tribute act is worth booking.
 
 - Best on: Instagram, Facebook (never LinkedIn)
-- Any era — pick the most share-worthy fact, not the most recent
+- Any era. Pick the most share-worthy fact, not the most recent
 - Lead with curiosity; cite the source with a link when one exists
 - Avoid clichés everyone already knows; aim for genuine surprise
 - Examples:
-  - "Dolly Parton writes most of her songs at 3am — including two classics she finished the same night. The Dolly Show carries that same restless energy to the stage."
+  - "Dolly Parton writes most of her songs at 3am, including two classics she finished the same night. The Dolly Show carries that same restless energy to the stage."
   - "Did you know Freddie Mercury designed Queen's crest himself, hiding all four members' zodiac signs in it? See the legend brought to life with The Rocket Man Show."
 
 ## Historical Fact about Artist Represented by Tribute
@@ -57,6 +57,78 @@ A surprising, lesser-known fact about the original artist — not tied to any da
 	- "Did you know that in 1969, Jimmy Buffett performed at a coffee house in Nashville before anyone knew his name? Full story: [archive link]"
 	- "When writing (song), (artist) said their inspiration was... [source: 1977 Rolling Stone interview]"
 
+
+## Re-Booking
+
+A venue has booked one of our acts more than once. In live entertainment this is
+the strongest proof there is: a buyer who took the risk once took it again.
+
+- Best on: LinkedIn, Instagram, Facebook
+- Lead with the count and the venue. "Third time at the Ridgefield Playhouse."
+  Never open with a vague "back by popular demand" and no numbers.
+- Name the specific venue and the years. If the summary gives you confirmed
+  dates, use them. Do not round, exaggerate, or guess at a number.
+- This is about the act's track record, not about attending anything. Do not
+  turn it into a ticket pitch, and do not mention any upcoming date.
+- Use it sparingly. It only lands because it is rare.
+- Examples:
+  - "The Ridgefield Playhouse has booked Arrival from Sweden three times since
+    2023. Venues do not repeat a booking that did not sell."
+  - "Second run at the Suffolk Theater in two years for The Fab Four. Booking
+    for spring: info@loveproductions.com."
+
+## Testimonial
+
+A real, published quote about one of our acts from a venue, promoter, talent
+buyer, or a review in a real outlet.
+
+- Best on: LinkedIn, Instagram, Facebook
+- **HARD RULE: use the quote exactly as supplied, word for word.** Never invent,
+  paraphrase, tidy up, extend, or improve a quote. Never attribute a quote to
+  anyone the source did not attribute it to. If the supplied quote is awkward,
+  quote it anyway or write around it, but do not rewrite what is inside the
+  quotation marks. Every testimonial that reaches you has been verified against
+  its source page; changing a word breaks that.
+- Name who said it. "The Boston Globe" or "Ridgefield Playhouse" carries the
+  weight, an anonymous rave does not.
+- Keep your own commentary to a sentence. The quote is the post.
+- Examples:
+  - "'The best night of ticket sales we had all season.' That is the Suffolk
+    Theater on Legends of Classic Rock. Availability: info@loveproductions.com."
+
+## Act Spotlight
+
+An evergreen introduction to one act, written for a talent buyer who has never
+booked them. Not news, not tied to a date.
+
+- Best on: LinkedIn, Instagram, Facebook
+- Built from the act's own page. Use the specifics it gives you: how long they
+  have performed, the rooms they play, the size of the production, the
+  credentials. Skip anything the page does not say. Do not invent credits.
+- Answer one question: why is this act a safe booking? Lead with the single
+  strongest credential, not with a general description of the music.
+- Ban generic act description. If the post could be about any tribute act,
+  it has failed.
+- Examples:
+  - "Arrival from Sweden has played ABBA's music in over 60 countries with a
+    full live band, and they tour with their own production. Booking for fall:
+    info@loveproductions.com."
+
+## Agency Credibility (Love Productions itself)
+
+A post about the agency rather than any one act, aimed squarely at buyers.
+
+- Best on: LinkedIn only. Never Instagram or Facebook.
+- **Use only the verified facts in [Agency Facts](agency-facts.md).** Do not add
+  numbers, dates, client names, awards or claims from anywhere else. If a fact
+  is not in that file, it does not go in the post.
+- Do not name a tribute act here. This one is about the roster and the agency.
+- Keep it to three or four sentences and a booking line. No mission statements,
+  no "we are passionate about live music."
+- Examples:
+  - "Love Productions has been booking tribute and legacy acts since 1985. Over
+    180 acts, placed in more than 70 countries. If you are building a season,
+    that is the catalog you are choosing from: info@loveproductions.com."
 
 ## Rules
 

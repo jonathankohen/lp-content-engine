@@ -55,7 +55,7 @@ def _get_ig_account_id() -> str:
 def _fetch_instagram_posts(limit: int = 25) -> list[dict]:
     ig_id = _get_ig_account_id()
     if not ig_id:
-        log.debug("No Instagram business account linked to this Facebook Page — skipping")
+        log.debug("No Instagram business account linked to this Facebook Page, skipping")
         return []
     data = _graph_get(f"{ig_id}/media", {
         "fields": "caption,like_count,comments_count",

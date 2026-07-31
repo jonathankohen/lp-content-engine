@@ -22,3 +22,11 @@ build/
 
 assets/
 notes.txt
+# Rendered social cards (deterministic, regenerated on demand)
+cards/
+
+# Downloaded Vimeo sources and cut clips
+video/
+
+.DS_Store
+**/.DS_Store

@@ -26,10 +26,10 @@ def fetch_linkedin_top_performers(n: int = 3) -> list[dict]:
 def _parse_csv(path: Path, n: int) -> list[dict]:
     with path.open(newline="", encoding="utf-8-sig") as f:
         raw = f.read()
-    # LinkedIn exports prepend a description row before the real headers — skip to it.
+    # LinkedIn exports prepend a description row before the real headers, skip to it.
     idx = raw.find("Post title")
     if idx == -1:
-        log.warning("LinkedIn CSV: could not find 'Post title' header — wrong sheet or format")
+        log.warning("LinkedIn CSV: could not find 'Post title' header, wrong sheet or format")
         return []
     posts = []
     for row in csv.DictReader(io.StringIO(raw[idx:])):

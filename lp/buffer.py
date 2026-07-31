@@ -59,7 +59,7 @@ def _buffer_gql(query: str, variables: dict | None = None) -> dict:
                 if window == "24h":
                     sys.exit("Buffer daily API limit reached. Try again tomorrow.")
                 wait = int(retry_after) if retry_after else 61
-                log.warning("Buffer rate limited — retrying in %ds...", wait)
+                log.warning("Buffer rate limited, retrying in %ds...", wait)
                 time.sleep(wait)
                 continue
             if not resp.ok:
@@ -84,7 +84,7 @@ def discover_buffer_profiles() -> dict[str, str]:
     data = _buffer_gql("query { account { organizations { id name } } }")
     orgs = data.get("data", {}).get("account", {}).get("organizations", [])
     if not orgs:
-        log.error("No Buffer organizations found — check API key scopes")
+        log.error("No Buffer organizations found, check API key scopes")
         return {}
     org_id = orgs[0]["id"]
     log.info("Buffer org: %s (%s)", orgs[0].get("name", ""), org_id)
@@ -117,9 +117,22 @@ def post_draft_to_buffer(
     dry_run: bool = False,
     image: str | None = None,
     scheduled_at: datetime | None = None,
+    images: list[str] | None = None,
 ) -> bool:
+    """Draft one post to a Buffer channel.
+
+    ``image`` attaches a single asset. ``images`` attaches several, which
+    Instagram renders as a swipeable carousel; it takes precedence over
+    ``image`` when both are given. ``CreatePostInput.assets`` is typed
+    ``[AssetInput!]!``, verified by schema introspection on 2026-07-31, so a
+    list is the native shape (the long-standing single-dict form worked only
+    because GraphQL coerces a lone value into a one-element list).
+    """
+    assets = [u for u in (images or ([image] if image else [])) if u]
     if dry_run:
         slot_str = f" @ {scheduled_at.strftime('%a %b %d %I:%M%p %Z')}" if scheduled_at else ""
+        if len(assets) > 1:
+            log.info("[dry-run] with %d-slide carousel", len(assets))
         log.info(
             "[dry-run] Buffer %s draft%s (%d chars):\n%s\n---",
             platform,
@@ -140,17 +153,20 @@ def post_draft_to_buffer(
     else:
         post_input["mode"] = "addToQueue"
     if platform == "facebook":
-        # No image asset — keep the URL in the body so Facebook unfurls a native
-        # link-preview card (with the source's og:image) on its own.
+        # Normally no image asset, so the URL in the body unfurls a native
+        # link-preview card. A card post has no URL to unfurl, so it passes
+        # assets explicitly and they are attached here.
         post_input["metadata"] = {"facebook": {"type": "post"}}
+        if assets:
+            post_input["assets"] = [{"image": {"url": u}} for u in assets]
     elif platform == "instagram":
         post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
-        if image:
-            post_input["assets"] = {"image": {"url": image}}
-    elif platform == "linkedin" and image:
-        # Attach the scraped image as native media. With no URL in the LinkedIn
-        # body, this renders as an image post with no link-preview card.
-        post_input["assets"] = {"image": {"url": image}}
+        if assets:
+            post_input["assets"] = [{"image": {"url": u}} for u in assets]
+    elif platform == "linkedin" and assets:
+        # Attach the image as native media. With no URL in the LinkedIn body,
+        # this renders as an image post with no link-preview card.
+        post_input["assets"] = [{"image": {"url": u}} for u in assets]
     data = _buffer_gql(
         """
         mutation CreateDraft($input: CreatePostInput!) {
@@ -216,9 +232,9 @@ def fetch_buffer_posts(
 
     Filters by ``statuses`` (default: drafts only) and, when ``services`` is given,
     by channel service (e.g. {"facebook"}). When ``since`` is given, keeps only
-    posts that were *sent* on or after that time (``sentAt >= since``) — used to
+    posts that were *sent* on or after that time (``sentAt >= since``), used to
     pull the past week's published posts. Fetches a single page of up to 100
-    posts — Buffer removed cursor pagination — which comfortably covers the
+    posts, Buffer removed cursor pagination, which comfortably covers the
     current queue and a recent date window.
     """
     org_id = _get_org_id()
@@ -397,7 +413,7 @@ def test_buffer() -> None:
 
     org_id   = orgs[0]["id"]
     org_name = orgs[0].get("name", "")
-    print(f"Connected — org: {org_name} ({org_id})\n")
+    print(f"Connected, org: {org_name} ({org_id})\n")
 
     data = _buffer_gql(
         "query GetChannels($input: ChannelsInput!) { channels(input: $input) { id service displayName } }",
@@ -422,10 +438,10 @@ def test_buffer() -> None:
 
     print("\nChannels marked [✓] will be used by the content engine.")
     if not matched:
-        print("\nNo matched channels — skipping draft test.")
+        print("\nNo matched channels, skipping draft test.")
         return
 
-    test_text = "[LP Content Engine test] This is an automated test draft — safe to delete."
+    test_text = "[LP Content Engine test] This is an automated test draft, safe to delete."
     print(f"\nCreating test draft on {len(matched)} channel(s)...\n")
     all_ok = True
     for c in matched:
@@ -438,4 +454,4 @@ def test_buffer() -> None:
     if all_ok:
         print("\nAll test drafts created successfully. Check Buffer to confirm, then delete them.")
     else:
-        print("\nOne or more drafts failed — check the error log above.")
+        print("\nOne or more drafts failed, check the error log above.")

@@ -61,7 +61,7 @@ function lp_news_allowed_categories()
 /**
  * Resolve the shared secret.
  *
- * Prefer a constant in wp-config.php (define('LP_NEWS_SECRET', '...'); — not
+ * Prefer a constant in wp-config.php (define('LP_NEWS_SECRET', '...'); not
  * stored in the database, the most secure option). Otherwise fall back to an
  * auto-generated option created on activation.
  */
@@ -98,7 +98,120 @@ add_action('rest_api_init', function () {
 			'permission_callback' => 'lp_news_rest_permission',
 		)
 	);
+
+	register_rest_route(
+		'lp-news/v1',
+		'/upload-media',
+		array(
+			'methods'             => 'POST',
+			'callback'            => 'lp_news_rest_upload_media',
+			'permission_callback' => 'lp_news_rest_permission',
+		)
+	);
 });
+
+/**
+ * Accept raw image bytes and return a public media-library URL.
+ *
+ * publish-news sideloads a featured image from a URL, which is useless for the
+ * branded cards the content engine renders locally: Buffer needs a public URL
+ * for an image asset, so the bytes have to reach the site before any URL exists.
+ * This endpoint closes that loop.
+ *
+ * Body: { key, filename, content_base64 }. `key` dedups: re-uploading the same
+ * card returns the existing attachment rather than filling the media library
+ * with duplicates on every re-run (card rendering is deterministic, so the same
+ * card genuinely is the same file).
+ */
+function lp_news_rest_upload_media(WP_REST_Request $request)
+{
+	$body = $request->get_json_params();
+	if (! is_array($body)) {
+		return new WP_REST_Response(array('error' => 'Body must be a JSON object.'), 400);
+	}
+
+	$key      = isset($body['key']) ? sanitize_text_field($body['key']) : '';
+	$filename = isset($body['filename']) ? sanitize_file_name($body['filename']) : '';
+	$b64      = isset($body['content_base64']) ? (string) $body['content_base64'] : '';
+
+	if ('' === $key || '' === $filename || '' === $b64) {
+		return new WP_REST_Response(array('error' => 'key, filename and content_base64 are all required.'), 400);
+	}
+
+	// Only the formats this pipeline actually produces: cards from the renderer,
+	// and mp4 clips cut from the agency's own Vimeo footage.
+	$ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+	if (! in_array($ext, array('png', 'jpg', 'jpeg', 'mp4'), true)) {
+		return new WP_REST_Response(array('error' => 'Only png, jpg and mp4 uploads are accepted.'), 400);
+	}
+	$is_video = ('mp4' === $ext);
+
+	$existing = get_posts(array(
+		'post_type'      => 'attachment',
+		'post_status'    => 'inherit',
+		'posts_per_page' => 1,
+		'fields'         => 'ids',
+		'meta_key'       => '_lp_news_media_key',
+		'meta_value'     => $key,
+	));
+	if (! empty($existing)) {
+		return new WP_REST_Response(array(
+			'id'      => (int) $existing[0],
+			'url'     => wp_get_attachment_url((int) $existing[0]),
+			'skipped' => true,
+		), 200);
+	}
+
+	$bytes = base64_decode($b64, true);
+	if (false === $bytes || '' === $bytes) {
+		return new WP_REST_Response(array('error' => 'content_base64 is not valid base64.'), 400);
+	}
+
+	// Trust the bytes, not the caller's extension. Images can be checked
+	// directly; for mp4 the ftyp box near the head of the file is the cheap
+	// equivalent, since getimagesizefromstring says nothing about video.
+	if ($is_video) {
+		if (false === strpos(substr($bytes, 0, 32), 'ftyp')) {
+			return new WP_REST_Response(array('error' => 'Payload is not a valid mp4.'), 400);
+		}
+		$mime = 'video/mp4';
+	} else {
+		$info = @getimagesizefromstring($bytes);
+		if (false === $info || empty($info['mime']) || 0 !== strpos($info['mime'], 'image/')) {
+			return new WP_REST_Response(array('error' => 'Payload is not a valid image.'), 400);
+		}
+		$mime = $info['mime'];
+	}
+
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/image.php';
+
+	$upload = wp_upload_bits($filename, null, $bytes);
+	if (! empty($upload['error'])) {
+		return new WP_REST_Response(array('error' => $upload['error']), 500);
+	}
+
+	$att_id = wp_insert_attachment(array(
+		'post_mime_type' => $mime,
+		'post_title'     => sanitize_text_field(pathinfo($filename, PATHINFO_FILENAME)),
+		'post_content'   => '',
+		'post_status'    => 'inherit',
+	), $upload['file']);
+
+	if (is_wp_error($att_id) || ! $att_id) {
+		@unlink($upload['file']);
+		return new WP_REST_Response(array('error' => 'Could not create the attachment.'), 500);
+	}
+
+	wp_update_attachment_metadata($att_id, wp_generate_attachment_metadata($att_id, $upload['file']));
+	update_post_meta($att_id, '_lp_news_media_key', $key);
+
+	return new WP_REST_Response(array(
+		'id'      => (int) $att_id,
+		'url'     => wp_get_attachment_url($att_id),
+		'skipped' => false,
+	), 200);
+}
 
 /**
  * Constant-time secret check via the X-LP-News-Secret header.
@@ -122,7 +235,7 @@ function lp_news_rest_permission(WP_REST_Request $request)
  *
  * Body: { dry_run?: bool, limit?: int, posts: [ { key, title, body,
  * categories[], button_url, button_label, image_url } ] }. Each post is created
- * once — re-sending the same `key` is a no-op (reported as skipped). `title` is
+ * once, re-sending the same `key` is a no-op (reported as skipped). `title` is
  * required; everything else degrades gracefully.
  */
 function lp_news_rest_publish_news(WP_REST_Request $request)
@@ -356,7 +469,7 @@ function lp_news_clean_text($text)
 /**
  * First-line indent prepended to every body paragraph after the first, to give
  * the article a "like a book" look. Em spaces (U+2003) are used because leading
- * ASCII whitespace/tabs collapse in HTML; roughly one tab's worth. Tunable — add
+ * ASCII whitespace/tabs collapse in HTML; roughly one tab's worth. Tunable, add
  * or remove &emsp; entities to widen or narrow the indent.
  */
 define('LP_NEWS_INDENT', '&emsp;&emsp;');
@@ -368,7 +481,7 @@ define('LP_NEWS_INDENT', '&emsp;&emsp;');
  *     (a hard line break, rendered consistently everywhere) instead of separate
  *     <p> blocks (whose theme margins are what vary by device). Every paragraph
  *     after the first is first-line indented (LP_NEWS_INDENT).
- *   - The final paragraph — the booking call-to-action — is kept as its own
+ *   - The final paragraph, the booking call-to-action, is kept as its own
  *     separate paragraph block so it still reads as a distinct new line.
  * Sanitized with wp_kses_post (keeps <br>, <a>, and the indent entities).
  * Returns '' for empty input.
@@ -502,10 +615,10 @@ function lp_news_sideload_url($url, $parent_id)
  * -------------------------------------------------------------------------- */
 
 /**
- * Post-meta keys that must NEVER be copied from the template post — WordPress
+ * Post-meta keys that must NEVER be copied from the template post, WordPress
  * internals and the per-post values this plugin manages itself (dedup key,
- * featured image, edit locks, slugs, etc.). Everything else on the template —
- * i.e. the theme's Header/Footer/Sidebar/Layout "Page settings" meta — is copied.
+ * featured image, edit locks, slugs, etc.). Everything else on the template, 
+ * i.e. the theme's Header/Footer/Sidebar/Layout "Page settings" meta, is copied.
  */
 function lp_news_template_meta_blocklist()
 {
@@ -581,7 +694,7 @@ add_action('admin_menu', function () {
 /**
  * Re-render the body of existing LP News posts (identified by the `_lp_news_key`
  * meta) into the current book style. Returns the number of posts updated. Only
- * touches the given statuses (drafts by default — never published posts unless
+ * touches the given statuses (drafts by default, never published posts unless
  * asked) and only rewrites when at least one paragraph was recovered.
  */
 function lp_news_reformat_existing($statuses = array('draft', 'pending'))
@@ -757,7 +870,7 @@ function lp_news_settings_page()
 			</p>
 			<?php submit_button('Save template', 'secondary'); ?>
 		</form>
-		<p>Apply the saved template's Page settings to <strong>specific posts</strong> — enter one or more post IDs (comma- or space-separated). Use this for a targeted fix:</p>
+		<p>Apply the saved template's Page settings to <strong>specific posts</strong>, enter one or more post IDs (comma- or space-separated). Use this for a targeted fix:</p>
 		<form method="post">
 			<?php wp_nonce_field('lpnews_apply_ids'); ?>
 			<input type="hidden" name="lpnews_apply_ids" value="1">
@@ -768,7 +881,7 @@ function lp_news_settings_page()
 			</p>
 			<?php submit_button('Apply to these posts', 'secondary'); ?>
 		</form>
-		<p>Or apply the saved template's Page settings to <strong>all existing</strong> LP News posts (published included — this fixes every post already on the site that is missing these settings):</p>
+		<p>Or apply the saved template's Page settings to <strong>all existing</strong> LP News posts (published included, this fixes every post already on the site that is missing these settings):</p>
 		<form method="post" onsubmit="return confirm('Apply the template Page settings to all existing LP News posts, including published ones?');">
 			<?php wp_nonce_field('lpnews_apply_template'); ?>
 			<input type="hidden" name="lpnews_apply_template" value="1">

@@ -10,11 +10,11 @@
 
 ## Peak Posting Times
 
-| Platform  | Best Times                    |
-| --------- | ----------------------------- |
-| LinkedIn  | 7-8am, 12pm, 5-6pm            |
-| Instagram | 11am-1pm, 7-9pm               |
-| Facebook  | 12pm-2pm, 6-8pm               |
+| Platform  | Best Times         |
+| --------- | ------------------ |
+| LinkedIn  | 7-8am, 12pm, 5-6pm |
+| Instagram | 11am-1pm, 7-9pm    |
+| Facebook  | 12pm-2pm, 6-8pm    |
 
 ## Batch Workflow
 
@@ -29,7 +29,7 @@ Weekly Batch (Sunday or Monday):
 Daily (10 min):
 
 1. Check engagement across all three platforms.
-2. Reply to comments — especially Facebook discussions and Instagram DMs
+2. Reply to comments. Especially Facebook discussions and Instagram DMs
    asking about tickets.
 3. Note what hook types or topics drove the most reach.
 

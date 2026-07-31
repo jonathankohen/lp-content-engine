@@ -3,14 +3,14 @@
 A second, publisher-sanctioned news channel that runs *alongside* Anthropic's
 hosted ``web_search`` (used by ``lp.ai.search_artist_news``). Each whitelisted
 outlet publishes an RSS feed for syndication; we read the headline, summary, and
-the outlet's own link back to the article — we never republish article bodies.
+the outlet's own link back to the article, we never republish article bodies.
 
 Only outlets whose RSS is clean and unambiguously offered for reading are
 included. Pitchfork's feed works fine from our own server (Condé Nast only
 blocks Anthropic's WebFetch IPs, not ours). Deliberately excluded: Consequence
 (robots.txt disallows /feed/ and blocks ClaudeBot).
 
-Pure stdlib + ``requests`` — no new dependency (mirrors ``lp.scrape``). Any
+Pure stdlib + ``requests``, no new dependency (mirrors ``lp.scrape``). Any
 failure (network, bad XML, one dead feed) degrades to fewer/no items, never
 raises.
 
@@ -30,7 +30,7 @@ import requests
 
 log = logging.getLogger(__name__)
 
-# Whitelisted outlets only (name, RSS url). Keep this list curated — adding a
+# Whitelisted outlets only (name, RSS url). Keep this list curated, adding a
 # feed here immediately puts it in the weekly run.
 MUSIC_FEEDS: list[tuple[str, str]] = [
     ("Billboard", "https://www.billboard.com/feed/"),
@@ -185,7 +185,7 @@ def search_artist_feeds(tribute: str, original: str, items: list[dict] | None = 
 
     Output dicts match search_artist_news()'s shape. Items matched on the
     tribute name are ``tribute_news``; items matched only on an original artist
-    are ``original_artist_news`` — and any of those that read as a live-event
+    are ``original_artist_news``, and any of those that read as a live-event
     announcement are dropped (never promote the original artist's own shows).
     """
     if items is None:

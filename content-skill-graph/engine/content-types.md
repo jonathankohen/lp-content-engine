@@ -7,7 +7,7 @@
 - Structure: Hook (act + date + venue) → hype → ticket link / booking CTA
 - LinkedIn angle: results and credibility. Instagram: visual urgency. Facebook: event post.
 - Data provided: act name, venue address, confirmed date. Use the city/venue name naturally
-  in the post — do not paste a full street address. Create urgency around the specific date.
+  in the post. Do not paste a full street address. Create urgency around the specific date.
 
 ## Post-Show Recap
 
@@ -35,8 +35,43 @@
 - Platforms: Facebook (primary), Instagram, LinkedIn
 - When: News about the original artist that the tribute act represents
 - Structure: The news → how it connects to our tribute act → fan excitement angle
-- Example: "Dolly Parton just announced a documentary — and The Dolly Show is
+- Example: "Dolly Parton just announced a documentary, and The Dolly Show is
   celebrating with a special set this Friday."
+
+## Re-Booking
+
+- Platforms: LinkedIn (primary), Instagram, Facebook
+- When: a venue's contracts show they have booked the same act more than once
+- Structure: The count and the venue → what it says about the act → availability
+- Lead with the number. "Third time at the Ridgefield Playhouse" is the post.
+- Never becomes a ticket pitch. This is track record, not an invitation.
+- Deliberately rare. Once per run at most.
+
+## Testimonial
+
+- Platforms: LinkedIn (primary), Instagram, Facebook
+- When: a published quote about the act exists and has been verified at its source
+- Structure: The quote → who said it → one line of context → booking CTA
+- The quote runs word for word. Never rewrite, extend, tighten, or re-attribute
+  anything inside the quotation marks.
+- An unattributed rave is worthless. Name the venue or the outlet.
+
+## Act Spotlight
+
+- Platforms: LinkedIn, Instagram, Facebook
+- When: evergreen, to introduce an act to buyers who have not booked them.
+  One per act per quarter.
+- Structure: Strongest credential → what they bring to a room → booking CTA
+- Built only from what the act's own page states. No invented credits.
+- Fails if the post could describe any tribute act.
+
+## Agency Credibility
+
+- Platforms: LinkedIn only
+- When: rare, to keep the agency itself visible to buyers between act news
+- Structure: One or two verified agency facts → what that means for a buyer → CTA
+- Facts come only from `engine/agency-facts.md`. No exceptions.
+- Does not name a tribute act. This one is about the roster.
 
 ## Carousel / Slide Post
 

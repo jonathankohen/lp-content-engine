@@ -1,5 +1,5 @@
 """
-clean_up.py — Buffer draft maintenance utility.
+clean_up.py, Buffer draft maintenance utility.
 
 Purges expired show announcement drafts (dry-run by default).
 
@@ -49,7 +49,7 @@ def _gql(query: str, variables: dict | None = None) -> dict:
             if window == "24h":
                 sys.exit("Buffer daily API limit reached. Try again tomorrow.")
             wait = int(retry_after) if retry_after else 61
-            print(f"Rate limited — retrying in {wait}s...")
+            print(f"Rate limited, retrying in {wait}s...")
             time.sleep(wait)
             continue
         if not resp.ok:
@@ -62,7 +62,7 @@ def _get_org_id() -> str:
     data = _gql("query { account { organizations { id name } } }")
     orgs = data.get("data", {}).get("account", {}).get("organizations", [])
     if not orgs:
-        sys.exit("No Buffer organizations found — check BUFFER_API_KEY")
+        sys.exit("No Buffer organizations found, check BUFFER_API_KEY")
     print(f"Org: {orgs[0].get('name', '')} ({orgs[0]['id']})\n")
     return orgs[0]["id"]
 
@@ -189,4 +189,4 @@ if __name__ == "__main__":
 
     run_purge_expired(org_id, apply=args.apply)
     if not args.apply:
-        print("Dry run — pass --apply to delete expired drafts.")
+        print("Dry run, pass --apply to delete expired drafts.")

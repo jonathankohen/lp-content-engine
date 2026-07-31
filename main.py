@@ -1,5 +1,5 @@
 """
-LP Content Engine — Weekly social media draft generator.
+LP Content Engine, Weekly social media draft generator.
 
 Fetches artists from Airtable, searches for recent news via Claude web search,
 deduplicates against a Google Sheet of already-used topics, generates
@@ -8,10 +8,11 @@ them as Buffer drafts for human review.
 
 Usage:
   python main.py                       # normal weekly run
-  python main.py --dry-run             # preview only — no Sheets or Buffer writes
+  python main.py --dry-run             # preview only, no Sheets or Buffer writes
   python main.py --artist "Act Name"   # single artist
   python main.py --test-airtable       # print artist list and exit
   python main.py --test-calendar       # print upcoming shows and exit
+  python main.py --test-rebookings     # print detected act/venue re-bookings and exit
   python main.py --test-buffer         # verify Buffer API and post test drafts
 """
 
@@ -25,8 +26,16 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from lp import config
-from lp.airtable import fetch_airtable_artists, fetch_upcoming_shows, show_to_topic
+from lp.airtable import (
+    fetch_airtable_artists,
+    fetch_rebookings,
+    fetch_upcoming_shows,
+    show_to_topic,
+)
 from lp.ai import (
+    build_act_spotlight_topic,
+    build_agency_topic,
+    build_page_testimonial_topics,
     classify_show_announcements,
     default_categories,
     exclusivity_bonus,
@@ -37,7 +46,10 @@ from lp.ai import (
     score_and_rank_topics,
     search_artist_news,
     search_historical_facts,
+    search_testimonials,
     search_trivia,
+    strip_dashes,
+    topic_key,
 )
 from lp.buffer import (
     discover_buffer_profiles,
@@ -51,16 +63,26 @@ from lp.buffer import (
 from lp.airtable import fetch_venue_from_contracts
 from lp.feeds import load_feed_items, search_artist_feeds
 from lp.loaders import load_artist_mappings, load_skill_graph
-from lp.scrape import fetch_og_image
-from lp.sheets import lookup_ticket_url, mark_show_used, mark_topics_used, read_used_topics
-from lp.wordpress import publish_news_posts
+from lp.artist_links import lookup_artist_url
+from lp.cards import key_art_for, render_quote_card, render_stat_card, render_tour_poster
+from lp.scrape import fetch_act_photo, fetch_og_image
+from lp.sheets import (
+    lookup_ticket_url,
+    mark_show_used,
+    mark_topics_used,
+    read_used_topics,
+    upcoming_tour_dates,
+)
+from lp.stats import act_credential_stats, agency_stats, rebooking_stat
+from lp.vimeo import ffmpeg_available as vimeo_ffmpeg_available
+from lp.wordpress import publish_news_posts, upload_media
 
 _EASTERN = ZoneInfo("America/New_York")
 _POST_HOUR = 10  # 10am ET
 
 
 def get_week_slots() -> list[datetime]:
-    """Return 7 slots for Tue–Mon of the current content week, at 10am ET."""
+    """Return 7 slots for Tue to Mon of the current content week, at 10am ET."""
     today = datetime.now(_EASTERN).date()
     days_until_tuesday = (1 - today.weekday()) % 7 or 7
     tuesday = today + timedelta(days=days_until_tuesday)
@@ -70,22 +92,225 @@ def get_week_slots() -> list[datetime]:
     ]
 
 
-def _image_for(platform: str, og_image: str | None) -> str | None:
+def _image_for(
+    platform: str,
+    og_image: str | None,
+    cards: dict[str, str] | None = None,
+    has_source_url: bool = True,
+) -> str | None:
     """Per-platform image routing for a topic's scraped og:image.
 
     - instagram: scraped image, falling back to the LP logo placeholder
     - linkedin: scraped image only (None -> text-only post, never a link card)
     - facebook: None (relies on the URL in the body for a native link preview)
+
+    A rendered card (see :mod:`lp.cards`) outranks the scraped image everywhere:
+    it is the point of the post, where the og:image is just decoration lifted
+    from someone else's article. Facebook normally takes no asset so its native
+    link preview can render, but a card post like a re-booking or an agency stat
+    has no source URL to unfurl, so there the card is the only thing to show.
     """
+    cards = cards or {}
+    card = cards.get("linkedin" if platform == "linkedin" else "square")
+
     if platform == "instagram":
-        return og_image or config._IG_PLACEHOLDER
+        return card or og_image or config._IG_PLACEHOLDER
     if platform == "linkedin":
-        return og_image
-    return None
+        return card or og_image
+    return card if (card and not has_source_url) else None
+
+
+def _post_tour_carousel(
+    artists: list[dict],
+    slot: datetime | None,
+    *,
+    buffer_profiles: dict,
+    dry_run: bool,
+    max_slides: int = 8,
+    min_dates: int = 3,
+) -> bool:
+    """Draft the "tours on sale now" carousel: one tour-date card per act.
+
+    This is a direct copy of the format the client sent as the model (Reliant
+    Talent Agency, 2026-07-31): a swipeable set of date-list slides under a
+    one-line caption. The dates carry the message, so the copy is deliberately
+    two short sentences and is **not** generated by Claude; a model asked to
+    write around a date list reliably pads it back into the paragraphs the
+    client rejected.
+
+    Instagram is the only channel that renders a real carousel, so it gets the
+    full set. LinkedIn takes the strongest single slide, since a buyer scrolling
+    LinkedIn will not swipe. Facebook takes the set too, where it renders as an
+    album. Returns True if anything was drafted.
+    """
+    slides, acts_used = [], []
+    for artist in artists:
+        name = (artist.get("name") or "").strip()
+        if not name:
+            continue
+        dates = upcoming_tour_dates(name)
+        # An act with one or two dates does not read as "on tour", and a thin
+        # slide undercuts the whole point of the format.
+        if len(dates) < min_dates:
+            continue
+        # A residency (every date at one place) renders as a dozen identical
+        # rows, which looks like a bug rather than a run of shows. The post is
+        # "tours on sale now", so it is the wrong slide for this format.
+        #
+        # Judge only the dates that will fit on the slide, not the whole list:
+        # Reza plays 92 dates in two venues, so a whole-list check passes while
+        # every visible row still reads "REZA LIVE THEATRE".
+        places = {
+            (d.get("city") or d.get("venue") or "").strip().lower()
+            for d in dates[:24]
+        }
+        if len(places) < 2:
+            log.info("Tour carousel: skipping %s, all dates at one location", name)
+            continue
+        # Official key art beats a scraped hero shot, so the photo is fetched
+        # only for the acts that have no key-art file on disk.
+        art = key_art_for(name)
+        path = render_tour_poster(
+            name, dates,
+            out_dir=config.CARD_DIR,
+            size="square",
+            art_path=art,
+            eyebrow="ON SALE NOW",
+            background_url=None if art else fetch_act_photo(
+                lookup_artist_url(name) or "", name),
+        )
+        if path:
+            slides.append(path)
+            acts_used.append(name)
+        if len(slides) >= max_slides:
+            break
+
+    if not slides:
+        log.info("Tour carousel: no act has %d+ upcoming dates, skipping", min_dates)
+        return False
+
+    log.info("Tour carousel: %d slide(s) from %s", len(slides), ", ".join(acts_used))
+
+    if dry_run:
+        urls = slides
+    else:
+        urls = [u for p in slides if (u := upload_media(p))]
+        if not urls:
+            log.warning("Tour carousel: no slide could be hosted, skipping")
+            return False
+
+    caption = "Our acts are booked and busy. Swipe to see the tours on sale now."
+    booking = config.STEVE_CALENDAR_LINK or config.LP_HOMEPAGE
+
+    drafted = False
+    for platform in ("instagram", "facebook", "linkedin"):
+        profile_id = buffer_profiles.get(platform, "")
+        if not profile_id and not dry_run:
+            continue
+        # Instagram captions do not linkify, so a 140-character booking URL there
+        # is dead weight that buries the one line doing the work.
+        text = caption if platform == "instagram" else f"{caption}\n\nBooking: {booking}"
+        # LinkedIn shows one image, not a carousel, so send only the lead slide.
+        payload = urls[:1] if platform == "linkedin" else urls
+        if post_draft_to_buffer(
+            text, profile_id, platform=platform, dry_run=dry_run,
+            scheduled_at=slot, images=payload,
+        ):
+            drafted = True
+            log.info("  %s tour carousel (%d slide(s))", platform, len(payload))
+    return drafted
+
+
+def _with_credential_stats(topic: dict, name: str, artist_url: str) -> dict:
+    """Attach any hard number found on the act's own page to a spotlight topic.
+
+    A spotlight is otherwise just page copy, which is exactly the kind of post
+    the client called "so AI". A verified figure gives it something to lead with
+    and a stat card to carry it. Acts whose page has no such number keep the
+    plain spotlight.
+    """
+    found = act_credential_stats({"name": name, "artist_url": artist_url})
+    if found:
+        topic["_credential_stats"] = found
+        log.info("  credential stat for %s: %s %s", name, found[0]["value"], found[0]["label"])
+    return topic
+
+
+def _cards_for_topic(topic: dict, dry_run: bool) -> dict[str, str]:
+    """Render and host the branded card a topic deserves, keyed by card size.
+
+    The client asked for "hard numbers with a graphic" (2026-07-31), so the
+    topic types that carry actual proof get one:
+
+    - ``testimonial``: the verified quote, set large.
+    - ``rebooking``: how many times one venue has re-booked the act.
+    - ``agency_proof``: one figure from the verified agency allowlist.
+    - ``act_spotlight``: a number extracted from the act's own page, if it has one.
+
+    Everything else (news, trivia, historical facts) keeps the source article's
+    og:image, which is the right picture for a story about someone else.
+
+    Returns ``{}`` when there is nothing worth a card, which is a normal result.
+    In dry-run mode the PNGs are still rendered locally (so output can be
+    reviewed) but not uploaded, and the local paths are returned.
+    """
+    hook = topic.get("hook_type", "")
+    act = (topic.get("_act") or topic.get("artist") or "").strip()
+    if not act:
+        return {}
+
+    # Card topics have no source article, so the act's own page photo is the only
+    # image available to sit behind the type. lookup_artist_url covers the whole
+    # roster, so this rarely comes back empty; when it does the card falls back
+    # to a flat ground, which is a fine look.
+    background = topic.get("_card_background")
+    if background is None:
+        # Act pages carry no og:image, so the hero shot has to be found in the
+        # markup; fetch_og_image would come back empty every time here.
+        background = fetch_act_photo(lookup_artist_url(act) or "", act)
+    out_dir = config.CARD_DIR
+    renders: dict[str, str] = {}
+
+    def _render(fn, *args, **kwargs):
+        for size in ("linkedin", "square"):
+            path = fn(*args, out_dir=out_dir, size=size,
+                      background_url=background, **kwargs)
+            if path:
+                renders[size] = path
+
+    if hook == "testimonial" and topic.get("quote"):
+        _render(render_quote_card, topic["quote"], topic.get("attribution", ""), act)
+    else:
+        stat = None
+        if hook == "rebooking":
+            stat = rebooking_stat(topic)
+        elif hook == "agency_proof":
+            candidates = agency_stats(datetime.now(ZoneInfo("America/New_York")).year)
+            stat = candidates[0] if candidates else None
+        elif hook == "act_spotlight":
+            found = topic.get("_credential_stats") or []
+            stat = found[0] if found else None
+        if not stat:
+            return {}
+        _render(render_stat_card, stat["value"], stat["label"], act,
+                context=stat.get("context", ""))
+
+    if not renders:
+        return {}
+    if dry_run:
+        log.info("  [dry-run] rendered card(s): %s", ", ".join(sorted(renders.values())))
+        return renders
+
+    hosted = {}
+    for size, path in renders.items():
+        url = upload_media(path)
+        if url:
+            hosted[size] = url
+    return hosted
 
 
 def _news_button_url(topic: dict, artist_url: str) -> str:
-    """Where a news post's 'Read more' button points — always somewhere.
+    """Where a news post's 'Read more' button points, always somewhere.
 
     Source URL → ticket URL → the act's loveproductions.com page → the homepage.
     """
@@ -108,12 +333,15 @@ def _build_news_post(
     Returns the payload dict (or None if article generation fails / is capped).
     The dedup key prefers the source URL, then the show sheet key, then the headline.
 
-    Show announcements are deliberately excluded from the website news section
-    (the client does not want them there), so any ``upcoming_show`` topic returns
-    None before any Claude call.
+    Two hook types return None before any Claude call:
+    - ``upcoming_show``, show announcements are deliberately excluded from the
+      website news section (the client does not want them there).
+    - ``agency_proof``, an agency-level post has no tribute act, so it cannot
+      carry the per-act tie-in and booking CTA every article requires.
     """
-    if topic.get("hook_type") == "upcoming_show":
-        log.info("Skipping news post for show announcement: %s", topic.get("headline", "")[:70])
+    if topic.get("hook_type") in ("upcoming_show", "agency_proof"):
+        log.info("Skipping news post for %s: %s",
+                 topic.get("hook_type"), topic.get("headline", "")[:70])
         return None
     article = generate_article(
         topic,
@@ -129,12 +357,15 @@ def _build_news_post(
         or topic.get("headline", "").strip()
     )
     # Featured image: ONLY the source article's own image (og:image). We never
-    # fall back to the artist's profile photo or the LP placeholder — if the
+    # fall back to the artist's profile photo or the LP placeholder, if the
     # article has no image, the post is drafted imageless and handled manually.
     return {
         "key":          key,
-        "title":        article["title"],
-        "body":         article["body"],
+        # Website articles are held to the same no-dash rule as the social copy,
+        # and the model breaks it there too. The body carries inline HTML for the
+        # booking CTA, which strip_dashes leaves alone.
+        "title":        strip_dashes(article["title"]),
+        "body":         strip_dashes(article["body"]),
         "categories":   article["categories"],
         "button_url":   _news_button_url(topic, artist_url),
         "button_label": "Read more",
@@ -156,7 +387,7 @@ def _strip_source_urls(text: str) -> str:
     """Remove URLs (and their CTA-label prefixes like 'Read more:') from text.
 
     Used when reconstructing an article body from a social post so the raw link
-    doesn't leak into the website body — the 'Read more' button carries it.
+    doesn't leak into the website body, the 'Read more' button carries it.
     """
     t = text or ""
     # Whole "Read more: <url>" style lines first, then any stray URLs, then any
@@ -216,7 +447,7 @@ def _buffer_posts_to_news(
     seeds the featured image (og:image). When there's no source URL, the post is
     matched to an act so the button points to that act's page; the featured image
     is always the article's own og:image and never falls back to a profile photo
-    or placeholder — imageless articles are drafted for manual handling. Deduped
+    or placeholder, imageless articles are drafted for manual handling. Deduped
     by source URL (falling back to the Buffer post id) so re-runs and the weekly
     pipeline never double-post the same story.
     """
@@ -287,7 +518,7 @@ def backfill_news_from_buffer(dry_run: bool = False) -> None:
 def backfill_news_from_queue(dry_run: bool = False) -> None:
     """Convert the current Buffer Facebook *queue* into website news posts.
 
-    Targets posts with status 'scheduled' — i.e. approved and waiting in the
+    Targets posts with status 'scheduled', i.e. approved and waiting in the
     queue to go out, distinct from unreviewed 'draft's and already-'sent' posts.
     Facebook is the universal channel (every topic routes to it) and its body
     carries the source URL, so one news post per FB queued post = one per topic
@@ -324,10 +555,33 @@ def backfill_news_from_week(days: int = 7, dry_run: bool = False) -> None:
     _buffer_posts_to_news(sent, skill_graph, artists, mappings, dry_run)
 
 
+def _is_show_topic(topic: dict) -> bool:
+    """True for anything that reads as a show announcement.
+
+    Covers both sources: an Airtable calendar show (`_is_show`) and a gig date
+    the news search surfaced, which is re-scored to the same baseline and is the
+    same kind of post to a reader.
+    """
+    return bool(topic.get("_is_show")) or topic.get("hook_type") == "upcoming_show"
+
+
 def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
-    """Pick up to n_slots topics; no act may appear more than twice consecutively."""
+    """Pick up to n_slots topics, keeping the week varied.
+
+    Two constraints:
+
+    - No act may appear more than twice consecutively.
+    - At most ``config.MAX_SHOWS_PER_WEEK`` show announcements. Shows and
+      gig-date news both score ``SHOW_BASE_SCORE`` plus the exclusivity bonus,
+      which outranks nearly all genuine news, so without a cap a week with a
+      busy calendar is nothing but show announcements (a real dry run on
+      2026-07-31 produced five of seven). The cap is what lets trivia,
+      historical facts and buyer-proof content reach a slot at all. Client
+      direction 2026-07-31: no more than three a week.
+    """
     selected: list[dict] = []
     used: set[int] = set()
+    shows = 0
     while len(selected) < n_slots:
         last_two = [t.get("_act", "") for t in selected[-2:]]
         chosen = None
@@ -336,20 +590,124 @@ def _select_with_diversity(ranked: list[dict], n_slots: int) -> list[dict]:
                 continue
             act = topic.get("_act", "")
             if len(last_two) == 2 and last_two[0] == act and last_two[1] == act:
-                continue  # would be a 3rd consecutive — skip
+                continue  # would be a 3rd consecutive, skip
+            if _is_show_topic(topic) and shows >= config.MAX_SHOWS_PER_WEEK:
+                continue
             chosen = i
             break
         if chosen is None:
-            # All remaining violate the rule — take best available rather than leave slot empty
+            # Only the consecutive-act rule is relaxed to avoid leaving a slot
+            # empty. The show cap is not: filling a slot with a fourth show
+            # announcement is exactly what the cap exists to prevent, and an
+            # unfilled slot is backfilled by the buyer-proof and filler phases.
             for i in range(len(ranked)):
-                if i not in used:
+                if i not in used and not (
+                    _is_show_topic(ranked[i]) and shows >= config.MAX_SHOWS_PER_WEEK
+                ):
                     chosen = i
                     break
         if chosen is None:
             break
         used.add(chosen)
+        if _is_show_topic(ranked[chosen]):
+            shows += 1
         selected.append(ranked[chosen])
+
+    dropped = sum(1 for t in ranked if _is_show_topic(t)) - shows
+    if dropped > 0:
+        log.info(
+            "Show cap: %d show announcement(s) selected, %d held back (MAX_SHOWS_PER_WEEK=%d)",
+            shows, dropped, config.MAX_SHOWS_PER_WEEK,
+        )
     return selected
+
+
+def _platforms_for(hook_type: str) -> tuple[str, ...]:
+    """The single routing point deciding which channels a hook type is drafted to.
+
+    - LinkedIn only: agency-level credibility posts, which are not about any one act.
+    - Instagram + Facebook only: show/ticket announcements and anything led by the
+      original artist. LinkedIn is a proof channel for buyers, not a show flyer.
+    - Everything else (tribute news, re-bookings, testimonials, act spotlights)
+      goes to all three.
+    """
+    if hook_type == "agency_proof":
+        return ("linkedin",)
+    if hook_type in ("original_artist_news", "historical_fact", "trivia", "upcoming_show"):
+        return ("instagram", "facebook")
+    return ("linkedin", "instagram", "facebook")
+
+
+def _draft_topic(
+    topic: dict,
+    slot: datetime | None,
+    *,
+    label: str,
+    skill_graph: str,
+    perf_context: str,
+    buffer_profiles: dict,
+    dry_run: bool,
+    news_posts: list[dict],
+    artist_url: str = "",
+) -> bool:
+    """Generate a topic's posts, draft them to Buffer, and queue its website article.
+
+    Shared by every slot-filling phase (trivia, historical facts, testimonials, act
+    spotlights, re-bookings, agency posts). Channels come from :func:`_platforms_for`,
+    so routing lives in exactly one place. A ``None`` slot means queue mode rather
+    than a scheduled time. Returns True if the topic produced at least a generation.
+    """
+    log.info(
+        "Generating %s: %s (slot=%s)",
+        label.lower(),
+        topic.get("headline", "")[:80],
+        slot.strftime("%a %b %d") if slot else "queue",
+    )
+    posts = generate_posts(topic, skill_graph, perf_context)
+    if not posts:
+        return False
+
+    source_url = (topic.get("url") or "").strip()
+    og_image = fetch_og_image(source_url)
+    cards = _cards_for_topic(topic, dry_run)
+    for platform in _platforms_for(topic.get("hook_type", "")):
+        text = strip_dashes(posts.get(platform, ""))
+        if not text:
+            log.warning("No %s post for %s '%s'", platform, label.lower(), topic.get("headline", "")[:60])
+            continue
+        profile_id = buffer_profiles.get(platform, "")
+        if not profile_id and not dry_run:
+            log.warning("No Buffer profile for %s, skipping", platform)
+            continue
+        ok = post_draft_to_buffer(
+            text,
+            profile_id,
+            platform=platform,
+            dry_run=dry_run,
+            scheduled_at=slot,
+            image=_image_for(platform, og_image, cards, bool(source_url)),
+        )
+        if ok:
+            log.info(
+                "  %s %s %s (%d chars)",
+                platform,
+                label.lower(),
+                slot.strftime("scheduled %a %b %d %I:%M%p %Z") if slot else "queued",
+                len(text),
+            )
+        else:
+            log.warning("  %s draft FAILED, see error above", platform)
+
+    # A card topic has no source article, so the card is also the best featured
+    # image the website post is going to get. Local dry-run paths are no use to
+    # the plugin, which sideloads from a URL.
+    article_image = og_image
+    if not dry_run and cards.get("linkedin"):
+        article_image = cards["linkedin"]
+    news_post = _build_news_post(topic, skill_graph, article_image, artist_url)
+    if news_post:
+        news_posts.append(news_post)
+    return True
 
 
 def _fill_with_facts(
@@ -366,23 +724,33 @@ def _fill_with_facts(
     buffer_profiles: dict,
     dry_run: bool,
     news_posts: list[dict],
+    require_original: bool = True,
+    max_items: int | None = None,
 ) -> None:
-    """Fill remaining week slots with Instagram + Facebook-only fact posts (trivia / historical).
+    """Fill remaining week slots with per-act posts (trivia, testimonials, spotlights).
 
-    Only acts with an original-artist mapping that haven't already been scheduled this run are
-    eligible. ``search_fn`` is a callable ``(act_name, original, slot_date) -> list[dict]``.
+    ``search_fn`` is a callable ``(act_name, original, slot_date) -> list[dict]``. Acts already
+    scheduled this run are skipped; with ``require_original`` (the default) only acts with an
+    original-artist mapping are eligible, which trivia and historical facts need but
+    testimonials and act spotlights do not. ``max_items`` caps how many posts this phase may
+    create regardless of how many slots are open.
+
     A ``None`` slot means "queue this draft" (news-only mode); the search still needs a real
     date for context, so today (ET) is used. Mutates ``scheduled_topics`` and ``used`` in place.
     """
-    if not remaining_slots:
+    if not remaining_slots or max_items == 0:
         return
     scheduled_acts = {t.get("_act", "") for t in scheduled_topics}
     candidates = [
         a for a in artists
-        if mappings.get(a["name"]) and a["name"] not in scheduled_acts
+        if a["name"] not in scheduled_acts
+        and (mappings.get(a["name"]) if require_original else True)
     ]
+    created = 0
     for slot, artist in zip(remaining_slots, candidates):
-        original = mappings[artist["name"]]
+        if max_items is not None and created >= max_items:
+            return
+        original = mappings.get(artist["name"], "")
         log.info("--- %s: %s [%s]", label, artist["name"], artist["priority"])
         search_date = slot if slot is not None else datetime.now(_EASTERN)
         found = search_fn(artist["name"], original, search_date)
@@ -393,49 +761,73 @@ def _fill_with_facts(
         item = new_items[0]
         item["_priority"] = artist["priority"]
         item["_act"] = artist["name"]
-        key = item.get("url", "").strip() or item.get("headline", "").strip()
-        used.add(key)
-        log.info(
-            "Generating %s: %s (slot=%s)",
-            label.lower(),
-            item.get("headline", "")[:80],
-            slot.strftime("%a %b %d") if slot else "queue",
+        used.add(topic_key(item))
+        drafted = _draft_topic(
+            item,
+            slot,
+            label=label,
+            skill_graph=skill_graph,
+            perf_context=perf_context,
+            buffer_profiles=buffer_profiles,
+            dry_run=dry_run,
+            news_posts=news_posts,
+            artist_url=artist.get("artist_url", ""),
         )
-        posts = generate_posts(item, skill_graph, perf_context)
-        if not posts:
+        if not drafted:
             continue
-        og_image = fetch_og_image(item.get("url", ""))
-        for platform in ("instagram", "facebook"):
-            text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
-            if not text:
-                log.warning("No %s post for %s '%s'", platform, label.lower(), item.get("headline", "")[:60])
-                continue
-            profile_id = buffer_profiles.get(platform, "")
-            if not profile_id and not dry_run:
-                log.warning("No Buffer profile for %s — skipping", platform)
-                continue
-            ok = post_draft_to_buffer(
-                text,
-                profile_id,
-                platform=platform,
-                dry_run=dry_run,
-                scheduled_at=slot,
-                image=_image_for(platform, og_image),
-            )
-            if ok:
-                log.info(
-                    "  %s %s %s (%d chars)",
-                    platform,
-                    label.lower(),
-                    slot.strftime("scheduled %a %b %d %I:%M%p %Z") if slot else "queued",
-                    len(text),
-                )
-            else:
-                log.warning("  %s draft FAILED — see error above", platform)
-        news_post = _build_news_post(item, skill_graph, og_image, artist.get("artist_url", ""))
-        if news_post:
-            news_posts.append(news_post)
+        created += 1
         scheduled_topics.append(item)
+
+
+def _fill_with_topics(
+    *,
+    label: str,
+    topics: list[dict],
+    remaining_slots: list[datetime],
+    scheduled_topics: list[dict],
+    used: set,
+    skill_graph: str,
+    perf_context: str,
+    buffer_profiles: dict,
+    dry_run: bool,
+    news_posts: list[dict],
+    artist_urls: dict | None = None,
+    max_items: int | None = None,
+) -> None:
+    """Fill remaining week slots with ready-made topics (re-bookings, agency posts).
+
+    Unlike :func:`_fill_with_facts` these topics need no per-act search, they are built
+    from data we already hold. Topics whose dedup key has been used are skipped, so a
+    re-booking fires once per act/venue pairing and an agency post once per quarter.
+    """
+    if not remaining_slots or max_items == 0:
+        return
+    artist_urls = artist_urls or {}
+    scheduled_acts = {t.get("_act", "") for t in scheduled_topics}
+    fresh = [
+        t for t in filter_new_topics(topics, used)
+        if not t.get("_act") or t["_act"] not in scheduled_acts
+    ]
+    created = 0
+    for slot, topic in zip(remaining_slots, fresh):
+        if max_items is not None and created >= max_items:
+            return
+        used.add(topic_key(topic))
+        drafted = _draft_topic(
+            topic,
+            slot,
+            label=label,
+            skill_graph=skill_graph,
+            perf_context=perf_context,
+            buffer_profiles=buffer_profiles,
+            dry_run=dry_run,
+            news_posts=news_posts,
+            artist_url=artist_urls.get(topic.get("_act", ""), ""),
+        )
+        if not drafted:
+            continue
+        created += 1
+        scheduled_topics.append(topic)
 
 
 load_dotenv()
@@ -466,7 +858,7 @@ def main(
     else:
         artists = fetch_airtable_artists()
         if not artists:
-            log.error("No artists fetched from Airtable — aborting")
+            log.error("No artists fetched from Airtable, aborting")
             return
         log.info("Fetched %d artists from Airtable", len(artists))
 
@@ -475,7 +867,7 @@ def main(
 
     buffer_profiles = discover_buffer_profiles()
     if not buffer_profiles and not dry_run:
-        log.error("No Buffer profiles found — aborting")
+        log.error("No Buffer profiles found, aborting")
         return
 
     all_new_topics: list[dict] = []
@@ -557,7 +949,7 @@ def main(
 
         found = search_artist_news(name, original)
         found += search_artist_feeds(name, original, feed_items)
-        # Web search and a feed can surface the same URL — dedup within this
+        # Web search and a feed can surface the same URL, dedup within this
         # artist's batch before the run-wide filter (which dedups vs. `used`).
         seen_keys: set[str] = set()
         deduped = []
@@ -581,7 +973,7 @@ def main(
         all_candidates.extend(new_topics)
 
     # News-only mode is "news, not shows": drop tribute-act live-date items that the news
-    # search classified as show announcements (hook_type 'upcoming_show') — the same items
+    # search classified as show announcements (hook_type 'upcoming_show'), the same items
     # the website step already skips. Freed slots backfill with real news/trivia/historical
     # so the run still targets N posts. (Normal weekly runs keep these to promote gigs.)
     if news_count is not None and all_candidates:
@@ -594,7 +986,7 @@ def main(
     if not all_candidates and not show_candidates:
         log.info("No new topics found this week")
     elif not week_slots:
-        log.warning("No open slots this week — skipping all posts")
+        log.warning("No open slots this week, skipping all posts")
     else:
         # Phase 2: score news, merge with shows into ONE ranked pool, fill slots by
         # score. Shows carry their baseline _score already; news is scored here.
@@ -604,7 +996,7 @@ def main(
         ranked_news = score_and_rank_topics(all_candidates)
         # A tribute-act gig date the news search surfaced (hook_type 'upcoming_show')
         # is a show announcement, not news. Re-score it at the show baseline so it no
-        # longer gets the exclusivity-boosted news score — genuine news (releases,
+        # longer gets the exclusivity-boosted news score, genuine news (releases,
         # awards, original-artist news) can then outrank a routine gig date. These
         # items still compete for and can win leftover slots. (In news-only mode they
         # were already dropped from all_candidates above, so this is a no-op there.)
@@ -615,7 +1007,29 @@ def main(
                 )
         pool = show_candidates + ranked_news
         pool.sort(key=lambda t: t.get("_score", 0), reverse=True)
-        selected = _select_with_diversity(pool, len(week_slots))
+
+        # Hold back slots for the buyer-proof phases. Most weeks the ranked pool is
+        # all shows and original-artist news, which never reach LinkedIn, so without
+        # a reservation LinkedIn gets nothing at all (that is the starvation this
+        # exists to fix). Only reserve when the pool cannot feed LinkedIn itself.
+        # Never in news-only mode (the caller asked for N news posts) and never in
+        # single-artist mode, where the fill phases are skipped entirely and any
+        # reserved slot would simply go unused.
+        pool_slots = len(week_slots)
+        if not news_count and not single_artist and config.LINKEDIN_RESERVED_SLOTS:
+            linkedin_in_pool = sum(
+                1 for t in pool[:pool_slots] if "linkedin" in _platforms_for(t.get("hook_type", ""))
+            )
+            shortfall = max(0, config.LINKEDIN_RESERVED_SLOTS - linkedin_in_pool)
+            if shortfall:
+                pool_slots = max(1, pool_slots - shortfall)
+                log.info(
+                    "Reserving %d slot(s) for buyer-proof content: only %d of the top "
+                    "%d ranked topic(s) are LinkedIn-eligible",
+                    shortfall, linkedin_in_pool, len(week_slots),
+                )
+
+        selected = _select_with_diversity(pool, pool_slots)
         n_shows_sel = sum(1 for t in selected if t.get("_is_show"))
         log.info(
             "Scheduling %d topic(s) across %d slot(s): %d show(s) + %d news "
@@ -647,20 +1061,21 @@ def main(
                 continue
 
             hook = topic.get("hook_type", "")
-            is_ig_fb_only = hook in ("original_artist_news", "historical_fact", "trivia")
-            platforms = ("instagram", "facebook") if is_ig_fb_only else ("linkedin", "instagram", "facebook")
-            if is_ig_fb_only:
-                log.info("  %s — skipping LinkedIn for '%s'", hook, headline)
+            platforms = _platforms_for(hook)
+            if "linkedin" not in platforms:
+                log.info("  %s, skipping LinkedIn for '%s'", hook, headline)
             effective_slot = slot if slot and slot > datetime.now(_EASTERN) else None
-            og_image = fetch_og_image(topic.get("url", ""))
+            source_url = (topic.get("url") or "").strip()
+            og_image = fetch_og_image(source_url)
+            cards = _cards_for_topic(topic, dry_run)
             for platform in platforms:
-                text = posts.get(platform, "").replace(" — ", "—").replace(" – ", "–")
+                text = strip_dashes(posts.get(platform, ""))
                 if not text:
                     log.warning("No %s post generated for '%s'", platform, headline)
                     continue
                 profile_id = buffer_profiles.get(platform, "")
                 if not profile_id and not dry_run:
-                    log.warning("No Buffer profile for %s — skipping", platform)
+                    log.warning("No Buffer profile for %s, skipping", platform)
                     continue
                 ok = post_draft_to_buffer(
                     text,
@@ -668,7 +1083,7 @@ def main(
                     platform=platform,
                     dry_run=dry_run,
                     scheduled_at=effective_slot,
-                    image=_image_for(platform, og_image),
+                    image=_image_for(platform, og_image, cards, bool(source_url)),
                 )
                 if ok:
                     log.info(
@@ -678,11 +1093,12 @@ def main(
                         len(text),
                     )
                 else:
-                    log.warning("  %s draft FAILED — see error above", platform)
+                    log.warning("  %s draft FAILED, see error above", platform)
 
             # _build_news_post returns None for upcoming_show topics (no website post
             # for shows), so this is a no-op for shows and a real article for news.
-            news_post = _build_news_post(topic, skill_graph, og_image, act_url.get(topic.get("_act", ""), ""))
+            article_image = cards["linkedin"] if (not dry_run and cards.get("linkedin")) else og_image
+            news_post = _build_news_post(topic, skill_graph, article_image, act_url.get(topic.get("_act", ""), ""))
             if news_post:
                 news_posts.append(news_post)
 
@@ -693,18 +1109,13 @@ def main(
             else:
                 scheduled_topics.append(topic)
 
-        # Phases 4 & 5: fill any slots left after shows + news with trivia, then
-        # historical facts (Instagram + Facebook only). Only the slots not taken by
-        # the ranked pool remain.
+        # Phases 4 to 9: fill any slots the ranked pool left open. Buyer-facing proof
+        # first (re-bookings, testimonials, spotlights, agency), then the Instagram and
+        # Facebook filler (trivia, historical facts) that has always been last.
         remaining_slots = week_slots[len(selected):]
         if not single_artist and remaining_slots:
-            before = len(scheduled_topics)
-            _fill_with_facts(
-                label="Trivia",
-                search_fn=lambda name, original, slot: search_trivia(name, original),
-                remaining_slots=remaining_slots,
-                artists=artists,
-                mappings=mappings,
+            artist_urls = {a["name"]: a.get("artist_url", "") for a in artists}
+            shared = dict(
                 scheduled_topics=scheduled_topics,
                 used=used,
                 skill_graph=skill_graph,
@@ -713,23 +1124,84 @@ def main(
                 dry_run=dry_run,
                 news_posts=news_posts,
             )
-            remaining_slots = remaining_slots[len(scheduled_topics) - before:]
 
-            if remaining_slots:
-                _fill_with_facts(
-                    label="Historical fact",
-                    search_fn=search_historical_facts,
-                    remaining_slots=remaining_slots,
-                    artists=artists,
-                    mappings=mappings,
-                    scheduled_topics=scheduled_topics,
-                    used=used,
-                    skill_graph=skill_graph,
-                    perf_context=perf_context,
-                    buffer_profiles=buffer_profiles,
-                    dry_run=dry_run,
-                    news_posts=news_posts,
-                )
+            def _run_phase(fill_fn, **kwargs) -> None:
+                """Run one fill phase and consume however many slots it actually used."""
+                nonlocal remaining_slots
+                if not remaining_slots:
+                    return
+                before = len(scheduled_topics)
+                fill_fn(remaining_slots=remaining_slots, **shared, **kwargs)
+                remaining_slots = remaining_slots[len(scheduled_topics) - before:]
+
+            # Phase 4: re-bookings. A venue booking the same act again is the strongest
+            # proof we have, and it comes straight from the contracts data. Deliberately
+            # rare (client direction 2026-07-28), so at most one per run.
+            _run_phase(
+                _fill_with_topics,
+                label="Re-booking",
+                topics=fetch_rebookings(mappings),
+                artist_urls=artist_urls,
+                max_items=config.REBOOKING_MAX_PER_RUN,
+            )
+
+            # Phase 5: published testimonials. The act's own LP page is tried first,
+            # since the praise quoted there is already published by the agency and needs
+            # no verification round trip or search call. Only acts whose page carries no
+            # pull-quote fall through to search_testimonials(), which is source-verified
+            # and so returns nothing for most acts, as expected.
+            _run_phase(
+                _fill_with_facts,
+                label="Testimonial",
+                search_fn=lambda name, original, slot, _a=artist_urls: (
+                    build_page_testimonial_topics(
+                        {"name": name, "artist_url": _a.get(name, ""), "original_artist": original}
+                    ) or search_testimonials(name, original)
+                ),
+                artists=artists,
+                mappings=mappings,
+                require_original=False,
+            )
+
+            # Phase 6: evergreen act spotlights, built from each act's own LP page.
+            # The quarter-stamped dedup key caps each act at one spotlight per quarter.
+            _run_phase(
+                _fill_with_facts,
+                label="Act spotlight",
+                search_fn=lambda name, original, slot, _a=artist_urls: (
+                    [_with_credential_stats(t, name, _a.get(name, ""))]
+                    if (t := build_act_spotlight_topic(
+                        {"name": name, "artist_url": _a.get(name, ""), "original_artist": original}
+                    )) else []
+                ),
+                artists=artists,
+                mappings=mappings,
+                require_original=False,
+            )
+
+            # Phase 7: agency credibility (LinkedIn only). Quarter-stamped, one per run.
+            _run_phase(
+                _fill_with_topics,
+                label="Agency proof",
+                topics=[build_agency_topic()],
+                max_items=1,
+            )
+
+            # Phases 8 & 9: Instagram + Facebook filler.
+            _run_phase(
+                _fill_with_facts,
+                label="Trivia",
+                search_fn=lambda name, original, slot: search_trivia(name, original),
+                artists=artists,
+                mappings=mappings,
+            )
+            _run_phase(
+                _fill_with_facts,
+                label="Historical fact",
+                search_fn=search_historical_facts,
+                artists=artists,
+                mappings=mappings,
+            )
 
         all_new_topics.extend(scheduled_topics)
         mark_topics_used(scheduled_topics, dry_run=dry_run)
@@ -748,7 +1220,7 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="LP Content Engine — weekly social draft generator"
+        description="LP Content Engine, weekly social draft generator"
     )
     parser.add_argument(
         "--dry-run",
@@ -770,6 +1242,11 @@ if __name__ == "__main__":
         "--test-calendar",
         action="store_true",
         help="Print upcoming shows from the Airtable calendar and exit",
+    )
+    parser.add_argument(
+        "--test-rebookings",
+        action="store_true",
+        help="Print act/venue pairings the contracts data shows as re-bookings and exit",
     )
     parser.add_argument(
         "--test-buffer",
@@ -813,7 +1290,36 @@ if __name__ == "__main__":
         metavar="DAYS",
         help="Convert the past week's published Buffer Facebook posts into website news posts and exit (optional DAYS, default 7)",
     )
+    parser.add_argument(
+        "--test-clips",
+        action="store_true",
+        help="Cut a short Vimeo clip per act (or one act with --artist) for review, then exit",
+    )
+    parser.add_argument(
+        "--tour-carousel",
+        action="store_true",
+        help="Draft the 'tours on sale now' carousel (one tour-date slide per act) and exit",
+    )
     args = parser.parse_args()
+
+    if args.test_clips:
+        config.load_env()
+        from lp.vimeo import clip_for_act
+        if not vimeo_ffmpeg_available():
+            sys.exit("ffmpeg/ffprobe not found on PATH; install ffmpeg to cut clips.")
+        names = [args.artist] if args.artist else [a["name"] for a in fetch_airtable_artists()]
+        for name in names:
+            print(f"  {name}: {clip_for_act(name) or 'no usable video'}")
+        sys.exit(0)
+
+    if args.tour_carousel:
+        config.load_env()
+        artists = fetch_airtable_artists()
+        profiles = {} if args.dry_run else discover_buffer_profiles()
+        ok = _post_tour_carousel(
+            artists, None, buffer_profiles=profiles, dry_run=args.dry_run
+        )
+        sys.exit(0 if ok else 1)
 
     if args.test_airtable:
         config.load_env()
@@ -836,7 +1342,19 @@ if __name__ == "__main__":
         else:
             print(f"Upcoming shows (next {config.SHOW_DAYS_AHEAD} days, FE contracts):")
             for s in shows:
-                print(f"  {s['show_date']}  {s['show_title']}  —  {s['venue_address']}")
+                print(f"  {s['show_date']}  {s['show_title']}, {s['venue_address']}")
+        sys.exit(0)
+
+    if args.test_rebookings:
+        config.load_env()
+        rebookings = fetch_rebookings(load_artist_mappings())
+        if not rebookings:
+            print("No act/venue pairing has more than one fully-executed contract.")
+        else:
+            print(f"Re-booked act/venue pairings ({len(rebookings)}), strongest first:")
+            for t in rebookings:
+                print(f"  [{t['_rebooking_count']}x] {t['headline']}")
+                print(f"        key: {t['sheet_key']}")
         sys.exit(0)
 
     if args.test_buffer:

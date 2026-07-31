@@ -1,9 +1,12 @@
 import logging
+import re
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import requests
 
 from .artist_links import lookup_artist_url
+from .sheets import lookup_venue_name
 from .config import (
     AIRTABLE_API_KEY,
     AIRTABLE_BASE_ID,
@@ -84,10 +87,27 @@ def fetch_airtable_artists() -> list[dict]:
     return artists
 
 
-def fetch_upcoming_shows() -> list[dict]:
-    """Return fully-executed shows from the Airtable calendar happening within SHOW_DAYS_AHEAD days."""
-    today  = datetime.now(tz=timezone.utc).date()
-    cutoff = today + timedelta(days=SHOW_DAYS_AHEAD)
+def _str(val: object) -> str:
+    """Flatten an Airtable cell (lookups arrive as single-element lists) to a string."""
+    if isinstance(val, list):
+        val = val[0] if val else ""
+    return str(val).strip()
+
+
+def _parse_show_date(raw: str):
+    """Parse a Show Date cell in any of the formats Airtable returns. None if unparseable."""
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(raw[:10] if fmt == "%Y-%m-%d" else raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _fetch_calendar_records() -> list[dict]:
+    """Fetch every fully-executed row from the Airtable calendar table (paginated)."""
     records: list[dict] = []
     params: dict = {
         "fields[]": ["LPC #", "Show Title", "Show Date", "Venue Address"],
@@ -114,29 +134,22 @@ def fetch_upcoming_shows() -> list[dict]:
         if not offset:
             break
         params["offset"] = offset
+    return records
 
-    def _str(val: object) -> str:
-        if isinstance(val, list):
-            val = val[0] if val else ""
-        return str(val).strip()
+
+def fetch_upcoming_shows() -> list[dict]:
+    """Return fully-executed shows from the Airtable calendar happening within SHOW_DAYS_AHEAD days."""
+    today  = datetime.now(tz=timezone.utc).date()
+    cutoff = today + timedelta(days=SHOW_DAYS_AHEAD)
 
     shows = []
-    for r in records:
+    for r in _fetch_calendar_records():
         fields = r.get("fields", {})
         show_date_str = fields.get("Show Date", "")
-        if not show_date_str:
-            continue
-        show_date = None
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%B %d, %Y", "%b %d, %Y"):
-            try:
-                show_date = datetime.strptime(
-                    show_date_str[:10] if fmt == "%Y-%m-%d" else show_date_str, fmt
-                ).date()
-                break
-            except ValueError:
-                continue
+        show_date = _parse_show_date(show_date_str)
         if show_date is None:
-            log.warning("Could not parse show date: %r", show_date_str)
+            if show_date_str:
+                log.warning("Could not parse show date: %r", show_date_str)
             continue
         if today <= show_date <= cutoff:
             shows.append({
@@ -174,6 +187,105 @@ def fetch_venue_from_contracts(lpc_number: str) -> str | None:
     return None
 
 
+def _slug(text: str) -> str:
+    """Lowercase alphanumeric slug, for stable dedup keys."""
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _norm(text: str) -> str:
+    """Normalize an act or venue string for grouping (case and spacing folded)."""
+    return " ".join(text.lower().split())
+
+
+def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> list[dict]:
+    """Return re-booking topics: acts a venue has booked more than once.
+
+    A venue bringing an act back is the strongest proof in live entertainment
+    (see ``audience/buyers.md``) and it is already sitting unused in the
+    contracts data. Every fully-executed contract is grouped by act + venue;
+    any pairing with ``min_bookings`` or more distinct show dates becomes a
+    candidate topic.
+
+    The venue must be resolvable to a **name**. A post reading "8901 N Kings Hwy
+    has booked them five times" is worthless, so pairings that resolve only to a
+    street address are dropped rather than posted. Names come from the tour dates
+    sheet first, then the contracts table, and only for groups that already
+    qualify (one lookup per re-booking, not one per contract row).
+
+    Returned dicts match the shape :func:`show_to_topic` produces, sorted
+    strongest first (most bookings, then most recent).
+    """
+    mappings = mappings or {}
+    groups: dict[tuple[str, str], dict] = defaultdict(
+        lambda: {"dates": set(), "lpc": "", "title": "", "venue_raw": ""}
+    )
+
+    for r in _fetch_calendar_records():
+        fields = r.get("fields", {})
+        title = _str(fields.get("Show Title", ""))
+        venue_raw = _str(fields.get("Venue Address", ""))
+        show_date = _parse_show_date(fields.get("Show Date", ""))
+        if not title or not venue_raw or show_date is None:
+            continue
+        g = groups[(_norm(title), _norm(venue_raw))]
+        g["dates"].add(show_date)
+        g["title"] = title
+        g["venue_raw"] = venue_raw
+        # Keep any LPC number from the group; used only to look up the venue name.
+        g["lpc"] = g["lpc"] or _str(fields.get("LPC #", ""))
+
+    qualifying = [g for g in groups.values() if len(g["dates"]) >= min_bookings]
+    # Strongest proof first: most bookings, then whichever ran most recently.
+    qualifying.sort(key=lambda g: (len(g["dates"]), max(g["dates"])), reverse=True)
+
+    topics = []
+    unnamed = 0
+    for g in qualifying:
+        title = g["title"]
+        dates = sorted(g["dates"])
+        venue = (
+            lookup_venue_name(title, [d.strftime("%Y-%m-%d") for d in dates])
+            or fetch_venue_from_contracts(g["lpc"])
+        )
+        if not venue:
+            unnamed += 1
+            log.debug(
+                "Re-booking skipped, no venue name for '%s' at %s", title, g["venue_raw"]
+            )
+            continue
+        count = len(dates)
+        first_year, last_year = dates[0].year, dates[-1].year
+        span = f"{first_year}" if first_year == last_year else f"{first_year} to {last_year}"
+        date_list = ", ".join(d.strftime("%B %d, %Y") for d in dates)
+        topics.append({
+            "artist":          title,
+            "original_artist": mappings.get(title, ""),
+            "headline":        f"{venue} has booked {title} {count} times ({span})",
+            "url":             "",
+            "sheet_key":       f"rebook_{_slug(title)}_{_slug(venue)}",
+            "summary": (
+                f"{venue} has booked {title} {count} separate times between {span}. "
+                f"Confirmed dates: {date_list}. A venue bringing an act back is proof "
+                f"the act draws and delivers."
+            ),
+            "hook_type":       "rebooking",
+            "ticket_url":      None,
+            "_act":            title,
+            "_rebooking_count": count,
+            # Kept as discrete fields (not just baked into the prose) so
+            # lp.stats can render the number on a card without re-parsing it
+            # back out of the summary.
+            "_venue":          venue,
+            "_span":           span,
+        })
+
+    log.info(
+        "Found %d re-booked act/venue pairing(s), %d dropped for having no venue name",
+        len(topics), unnamed,
+    )
+    return topics
+
+
 def show_to_topic(show: dict, mappings: dict) -> dict:
     """Convert an Airtable calendar show into a topic dict for generate_posts()."""
     try:
@@ -185,7 +297,7 @@ def show_to_topic(show: dict, mappings: dict) -> dict:
     return {
         "artist":          title,
         "original_artist": mappings.get(title, ""),
-        "headline":        f"Upcoming Show: {title} — {venue} — {date_formatted}",
+        "headline":        f"Upcoming Show: {title}, {venue}, {date_formatted}",
         "url":             "",
         "sheet_key":       f"lpc_{show['lpc_number']}",
         "summary":         f"{title} is performing at {venue} on {date_formatted}. Confirmed booking.",

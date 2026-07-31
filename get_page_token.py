@@ -61,7 +61,7 @@ pages = resp.json().get("data", [])
 lp = next((p for p in pages if "Love Productions" in p.get("name", "")), None)
 if not lp:
     print("Pages found:", [p["name"] for p in pages])
-    sys.exit("Love Productions Inc. not found — make sure the token has pages_show_list permission")
+    sys.exit("Love Productions Inc. not found, make sure the token has pages_show_list permission")
 
 page_token = lp["access_token"]
 print(f"Found: {lp['name']} ({lp['id']})")

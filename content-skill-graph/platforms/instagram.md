@@ -3,7 +3,7 @@
 ## Platform DNA
 
 - Caption limit: 2,200 characters, but engagement lives in the visual.
-  The photo or video stops the scroll — the caption closes the deal.
+  The photo or video stops the scroll. The caption closes the deal.
 - Vibe: Visual-first, energetic, fan-facing. Concert photos, crowd shots,
   stage moments. The excitement of live music captured in a frame.
 - Audience: Fans, music lovers, concert-goers, and ticket-buyers.
@@ -15,7 +15,7 @@
   artist moments, behind-the-scenes.
 - Carousels work well: 5-7 slides for show recaps or artist spotlights.
 - Slide 1 = the hook. Bold claim, big energy, something that demands a swipe.
-  Use [Hooks](../engine/hooks.md) — show announcements and proof hooks work best visually.
+  Use [Hooks](../engine/hooks.md), show announcements and proof hooks work best visually.
 - Match [Brand Voice](../voice/brand-voice.md) but simpler, more energetic. See [Platform Tone](../voice/platform-tone.md).
 - Captions add context the visuals don't cover. Don't just repeat what's
   visible in the photo.

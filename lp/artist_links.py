@@ -3,7 +3,7 @@
 Every act page lives under the site's ``/title-item/`` directory. The canonical
 source of these URLs is the Airtable artists table (``_artist_url_from_fields``
 in ``lp/airtable.py``), but that scan can come back blank if a future act's row
-is missing the link field — which would leave a news article with no page to
+is missing the link field, which would leave a news article with no page to
 link the act's name to. This module prepopulates the links for the known roster
 so ``fetch_airtable_artists()`` can fall back to them and never emit a blank at
 runtime.
