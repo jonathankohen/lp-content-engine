@@ -76,7 +76,7 @@
 ## Carousel / Slide Post
 
 - Platforms: Instagram (primary), LinkedIn (document posts)
-- When: Show recaps, act introductions, "reasons to book" or "reasons to attend"
+- When: Tour posters of upcoming shows, show recaps, act introductions, "reasons to book" or "reasons to attend"
 - Structure: Slide 1 = bold hook, slides 2-6 = content moments, last = CTA with handle
 - One idea per slide. Max 30 words per slide.
 

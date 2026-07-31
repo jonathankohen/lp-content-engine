@@ -623,11 +623,49 @@ def render_tour_poster(
         city_col = min(widest + int(dims[0] * 0.030), int(inner * 0.42))
 
     def _clip(text: str, font, limit: int) -> str:
+        """Trim to fit, on a word boundary, with an ellipsis.
+
+        The old rule chopped two characters at a time and appended a full stop,
+        which produced "Newtown Theater, Newto." and "Allen Theatre & Backstag.",
+        both of which read as a rendering fault rather than an abbreviation.
+        """
         if limit <= 0:
             return ""
-        while text and _text_width(draw, text, font) > limit:
-            text = text[:-2].rstrip() + "."
-        return text
+        if _text_width(draw, text, font) <= limit:
+            return text
+        words = text.split()
+        while len(words) > 1:
+            words.pop()
+            candidate = " ".join(words).rstrip(",&-") + "…"
+            if _text_width(draw, candidate, font) <= limit:
+                return candidate
+        # A single word too wide for the column still has to be cut somewhere.
+        while text and _text_width(draw, text + "…", font) > limit:
+            text = text[:-1]
+        return text + "…" if text else ""
+
+    def _venue_text(row: dict) -> str:
+        """The venue with any city and state it repeats stripped off.
+
+        The sheet often stores "Newtown Theater, Newtown PA" while the city
+        column beside it already says NEWTOWN, PA. Dropping the repeat is both
+        better typography and the difference between fitting and not.
+        """
+        venue = (row.get("venue") or "").strip()
+        city = (row.get("city") or "").strip()
+        if not venue or not city:
+            return venue
+        head, sep, tail = venue.rpartition(",")
+        if not sep:
+            return venue
+        # "Newtown PA", "Newtown, PA" and "Newtown" all count as a repeat.
+        tail_words = re.sub(r"[^a-z ]", " ", tail.lower()).split()
+        city_words = re.sub(r"[^a-z ]", " ", city.lower()).split()
+        region = (row.get("region") or "").strip().lower()
+        allowed = set(city_words) | ({region} if region else set())
+        if tail_words and all(w in allowed for w in tail_words):
+            return head.strip() or venue
+        return venue
 
     top_y = y
     for i, (row, date_str) in enumerate(zip(drawn, date_strs)):
@@ -638,12 +676,13 @@ def render_tour_poster(
         draw.text((col_x, row_y), date_str, font=row_font, fill=RED)
 
         if venues:
-            venue = row.get("venue", "").strip()
+            venue = _venue_text(row)
             # A row whose city is missing (several are cruise ports) gives its
             # whole width to the venue rather than leaving a gap.
             if not _place(row):
                 draw.text((col_x + date_col, row_y),
-                          _clip(venue.upper(), city_font, col_w - date_col),
+                          _clip((row.get("venue") or "").strip().upper(),
+                                city_font, col_w - date_col),
                           font=city_font, fill=text_hi)
             else:
                 draw.text((col_x + date_col, row_y),
