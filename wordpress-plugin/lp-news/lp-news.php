@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       LP News
  * Description:        Creates standard WordPress news posts (draft) from the LP Content Engine weekly run. Each post gets a featured image, body, category, and a red "Read more" button linking to the source.
- * Version:           1.1.0
+ * Version:           1.1.1
  * Author:            Love Productions
  * License:           GPL-2.0-or-later
  * Requires at least: 5.8
@@ -30,7 +30,7 @@ if (! defined('ABSPATH')) {
 	exit; // No direct access.
 }
 
-define('LP_NEWS_VERSION', '1.1.0');
+define('LP_NEWS_VERSION', '1.1.1');
 define('LP_NEWS_OPTION_SECRET', 'lp_news_secret');
 // ID of a post configured with the desired theme "Page settings"
 // (Header/Footer/Sidebar/Layout/etc.); its meta is copied onto every new post.
@@ -314,7 +314,13 @@ function lp_news_store_media($key, $filename, $bytes, $is_video)
 		$mime = $info['mime'];
 	}
 
+	// media.php is required for VIDEO: wp_generate_attachment_metadata() calls
+	// wp_read_video_metadata(), which is defined there, and its absence is a
+	// fatal error rather than a graceful miss. Images never needed it, so the
+	// omission only surfaced on the first real mp4 upload (2026-08-03), as a
+	// 500 on the final chunk after the first nine had all succeeded.
 	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/media.php';
 	require_once ABSPATH . 'wp-admin/includes/image.php';
 
 	$upload = wp_upload_bits($filename, null, $bytes);
@@ -334,7 +340,14 @@ function lp_news_store_media($key, $filename, $bytes, $is_video)
 		return new WP_REST_Response(array('error' => 'Could not create the attachment.'), 500);
 	}
 
-	wp_update_attachment_metadata($att_id, wp_generate_attachment_metadata($att_id, $upload['file']));
+	// The attachment already exists and is serveable at this point, so a
+	// metadata failure must not lose it. Video metadata in particular depends on
+	// what the host's PHP build can read.
+	try {
+		wp_update_attachment_metadata($att_id, wp_generate_attachment_metadata($att_id, $upload['file']));
+	} catch (Throwable $e) {
+		error_log('LP News: attachment metadata failed for ' . $att_id . ': ' . $e->getMessage());
+	}
 	update_post_meta($att_id, '_lp_news_media_key', $key);
 
 	return new WP_REST_Response(array(
