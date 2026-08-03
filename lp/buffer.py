@@ -118,6 +118,8 @@ def post_draft_to_buffer(
     image: str | None = None,
     scheduled_at: datetime | None = None,
     images: list[str] | None = None,
+    video: str | None = None,
+    thumbnail: str | None = None,
 ) -> bool:
     """Draft one post to a Buffer channel.
 
@@ -127,11 +129,19 @@ def post_draft_to_buffer(
     ``[AssetInput!]!``, verified by schema introspection on 2026-07-31, so a
     list is the native shape (the long-standing single-dict form worked only
     because GraphQL coerces a lone value into a one-element list).
+
+    ``video`` is a public mp4 URL and outranks every image: ``AssetInput`` has a
+    ``video`` member (``VideoAssetInput``), so a clip needs nothing beyond a
+    hosted file. ``thumbnail`` is its poster frame, optional but worth sending,
+    since without one the platforms pick their own and often land on a black
+    frame.
     """
     assets = [u for u in (images or ([image] if image else [])) if u]
     if dry_run:
         slot_str = f" @ {scheduled_at.strftime('%a %b %d %I:%M%p %Z')}" if scheduled_at else ""
-        if len(assets) > 1:
+        if video:
+            log.info("[dry-run] with video %s", video)
+        elif len(assets) > 1:
             log.info("[dry-run] with %d-slide carousel", len(assets))
         log.info(
             "[dry-run] Buffer %s draft%s (%d chars):\n%s\n---",
@@ -152,21 +162,32 @@ def post_draft_to_buffer(
         post_input["dueAt"] = scheduled_at.isoformat()
     else:
         post_input["mode"] = "addToQueue"
+    video_asset = None
+    if video:
+        va: dict = {"url": video}
+        if thumbnail:
+            va["thumbnailUrl"] = thumbnail
+        video_asset = [{"video": va}]
+
     if platform == "facebook":
         # Normally no image asset, so the URL in the body unfurls a native
         # link-preview card. A card post has no URL to unfurl, so it passes
         # assets explicitly and they are attached here.
-        post_input["metadata"] = {"facebook": {"type": "post"}}
-        if assets:
-            post_input["assets"] = [{"image": {"url": u}} for u in assets]
+        post_input["metadata"] = {"facebook": {"type": "video" if video else "post"}}
+        if video_asset or assets:
+            post_input["assets"] = video_asset or [{"image": {"url": u}} for u in assets]
     elif platform == "instagram":
-        post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
-        if assets:
-            post_input["assets"] = [{"image": {"url": u}} for u in assets]
-    elif platform == "linkedin" and assets:
-        # Attach the image as native media. With no URL in the LinkedIn body,
-        # this renders as an image post with no link-preview card.
-        post_input["assets"] = [{"image": {"url": u}} for u in assets]
+        # A clip posts as a reel; Instagram has no other native video type, and
+        # shouldShareToFeed puts it in the grid as well.
+        post_input["metadata"] = {
+            "instagram": {"type": "reel" if video else "post", "shouldShareToFeed": True}
+        }
+        if video_asset or assets:
+            post_input["assets"] = video_asset or [{"image": {"url": u}} for u in assets]
+    elif platform == "linkedin" and (video_asset or assets):
+        # Attach the media natively. With no URL in the LinkedIn body, this
+        # renders as an image or video post with no link-preview card.
+        post_input["assets"] = video_asset or [{"image": {"url": u}} for u in assets]
     data = _buffer_gql(
         """
         mutation CreateDraft($input: CreatePostInput!) {
@@ -323,6 +344,22 @@ def is_show_announcement(text: str) -> bool:
     client does not want there.
     """
     return bool(_SHOW_KEYWORDS.search(text)) and _extract_earliest_date(text) is not None
+
+
+def is_future_show_announcement(text: str) -> bool:
+    """True if the copy pitches attendance at a live date that has not happened yet.
+
+    Stricter than :func:`is_show_announcement`, and the difference matters: this
+    is the last-line guard that keeps show copy off LinkedIn (client direction
+    2026-08-03), and LinkedIn is the channel already starved of content, so a
+    false positive there costs a post. Buyer-proof copy cites past dates ("this
+    venue has booked them three times") and legitimately uses words like "venue"
+    and "show"; only a date still ahead of us means the post is selling tickets.
+    """
+    if not is_show_announcement(text):
+        return False
+    dt = _extract_earliest_date(text)
+    return dt is not None and dt.date() >= datetime.now(tz=timezone.utc).date()
 
 
 def _is_expired_show_announcement(text: str) -> bool:

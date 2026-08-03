@@ -73,6 +73,14 @@ LINKEDIN_RESERVED_SLOTS = int(os.environ.get("LINKEDIN_RESERVED_SLOTS", "2"))
 # win a slot. Applies to Airtable calendar shows and gig-date news together.
 MAX_SHOWS_PER_WEEK = int(os.environ.get("MAX_SHOWS_PER_WEEK", "3"))
 
+# Floor, not a cap: how many posts a week must be led by a graphic or a video we
+# made (tour poster, stat/quote card, act clip). Client direction 2026-08-03:
+# "we need more images and video, can we set a minimum, maybe 2?". A typical week
+# produces almost no card-eligible material on its own (see the 2026-07-31 dry
+# run, zero cards across 16 drafts), so the engine tops up to this number after
+# every other phase has run, queueing the extras when the week has no slot left.
+VISUAL_MIN_PER_WEEK = int(os.environ.get("VISUAL_MIN_PER_WEEK", "2"))
+
 SEARCH_MODEL = "claude-haiku-4-5"
 CONTENT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096

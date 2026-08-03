@@ -14,6 +14,7 @@ Usage:
   python main.py --test-calendar       # print upcoming shows and exit
   python main.py --test-rebookings     # print detected act/venue re-bookings and exit
   python main.py --test-buffer         # verify Buffer API and post test drafts
+  python main.py --visual-count 4      # graphics and clips only, queued to Buffer
 """
 
 import argparse
@@ -21,6 +22,7 @@ import logging
 import re
 import sys
 from datetime import datetime, timedelta
+from itertools import zip_longest
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -56,6 +58,7 @@ from lp.buffer import (
     fetch_buffer_posts,
     fetch_top_performers,
     get_occupied_slots,
+    is_future_show_announcement,
     post_draft_to_buffer,
     purge_expired_show_drafts,
     test_buffer,
@@ -75,7 +78,7 @@ from lp.sheets import (
     upcoming_tour_dates,
 )
 from lp.stats import act_credential_stats, agency_stats, rebooking_stat
-from lp.vimeo import ffmpeg_available as vimeo_ffmpeg_available
+from lp.vimeo import clip_for_act, ffmpeg_available as vimeo_ffmpeg_available
 from lp.wordpress import publish_news_posts, upload_media
 
 _EASTERN = ZoneInfo("America/New_York")
@@ -140,9 +143,11 @@ def _post_tour_carousel(
     client rejected.
 
     Instagram is the only channel that renders a real carousel, so it gets the
-    full set. LinkedIn takes the strongest single slide, since a buyer scrolling
-    LinkedIn will not swipe. Facebook takes the set too, where it renders as an
-    album. Returns True if anything was drafted.
+    full set; Facebook takes the set too, where it renders as an album.
+    **LinkedIn gets nothing.** It used to take the lead slide, but a poster of
+    dates on sale is a show announcement whatever the artwork, and the client
+    ruled those off LinkedIn entirely (2026-08-03). Returns True if anything was
+    drafted.
     """
     slides, acts_used = [], []
     for artist in artists:
@@ -206,21 +211,19 @@ def _post_tour_carousel(
     booking = config.STEVE_CALENDAR_LINK or config.LP_HOMEPAGE
 
     drafted = False
-    for platform in ("instagram", "facebook", "linkedin"):
+    for platform in ("instagram", "facebook"):
         profile_id = buffer_profiles.get(platform, "")
         if not profile_id and not dry_run:
             continue
         # Instagram captions do not linkify, so a 140-character booking URL there
         # is dead weight that buries the one line doing the work.
         text = caption if platform == "instagram" else f"{caption}\n\nBooking: {booking}"
-        # LinkedIn shows one image, not a carousel, so send only the lead slide.
-        payload = urls[:1] if platform == "linkedin" else urls
         if post_draft_to_buffer(
             text, profile_id, platform=platform, dry_run=dry_run,
-            scheduled_at=slot, images=payload,
+            scheduled_at=slot, images=urls,
         ):
             drafted = True
-            log.info("  %s tour carousel (%d slide(s))", platform, len(payload))
+            log.info("  %s tour carousel (%d slide(s))", platform, len(urls))
     return drafted
 
 
@@ -367,6 +370,190 @@ def _cards_for_topic(topic: dict, dry_run: bool) -> dict[str, str]:
         if url:
             hosted[size] = url
     return hosted
+
+
+# ── Visual posts (graphic-led and video-led) ──────────────────────────────────
+#
+# Everything above builds a post out of copy and then looks for a picture to sit
+# beside it. These two do the reverse: the graphic or the clip is the post, and
+# the caption exists only to say what it is. That is the format the client
+# pointed at (Reliant Talent, a date poster under 17 words) and the thing a week
+# of ordinary news drafting almost never produces on its own.
+#
+# The captions are deliberately hardcoded rather than generated, for the same
+# reason the tour carousel's is: a model asked to write around a graphic pads it
+# straight back into the paragraphs the client rejected as "so AI".
+
+
+def _slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:40]
+
+
+def _tour_poster_topic(name: str, *, period: str, min_dates: int = 3) -> dict | None:
+    """One act's upcoming dates rendered as a poster, wrapped as a drafting topic.
+
+    Same exclusions as the carousel, learned from real output: under three dates
+    does not read as a tour, and an act playing one venue over and over is a
+    residency, which renders as a column of identical rows and looks like a bug.
+    """
+    dates = collapse_residencies(upcoming_tour_dates(name))
+    if len(dates) < min_dates:
+        return None
+    places = {(d.get("city") or d.get("venue") or "").strip().lower() for d in dates[:24]}
+    if len(places) < 2:
+        log.info("Visual: skipping %s poster, all dates at one location", name)
+        return None
+
+    art = key_art_for(name)
+    path = render_tour_poster(
+        name, dates,
+        out_dir=config.CARD_DIR,
+        size="square",
+        art_path=art,
+        eyebrow="ON SALE NOW",
+        background_url=None if art else fetch_act_photo(lookup_artist_url(name) or "", name),
+    )
+    if not path:
+        return None
+    return {
+        "hook_type":   "tour_poster",
+        "headline":    f"{display_act(name)} tour dates",
+        "artist":      name,
+        "_act":        name,
+        # Monthly, so an act's poster refreshes as its dates move rather than
+        # firing once ever and going stale.
+        "sheet_key":   f"tourposter_{_slugify(name)}_{period}",
+        "_image_path": path,
+        "_visual":     True,
+        # Fronted rather than "X is out on the road", which needs the verb to
+        # agree with the act's name: half the roster is plural ("The Platters
+        # is...") and half is not.
+        "_text":       f"On tour now: {display_act(name)}. Dates on the graphic.",
+    }
+
+
+def _act_clip_topic(name: str, *, period: str) -> dict | None:
+    """A short clip of the act's own footage from the agency's Vimeo library.
+
+    Video is the format the client asked for and the one nothing else in the
+    pipeline produces. The footage is the agency's own, so the rights are
+    already clean, which is why this beats generating anything.
+
+    Not a show announcement: it is the act performing, with no date attached, so
+    it is the one visual type that belongs on LinkedIn as well.
+    """
+    if not vimeo_ffmpeg_available():
+        return None
+    path = clip_for_act(name)
+    if not path:
+        return None
+    return {
+        "hook_type": "act_video",
+        "headline":  f"{display_act(name)} clip",
+        "artist":    name,
+        "_act":      name,
+        "sheet_key": f"clip_{_slugify(name)}_{period}",
+        "_video_path": path,
+        "_visual":   True,
+        "_text":     f"{display_act(name)}, live.",
+    }
+
+
+def _draft_visual_posts(
+    *,
+    artists: list[dict],
+    want: int,
+    slots: list,
+    used: set,
+    buffer_profiles: dict,
+    dry_run: bool,
+    scheduled_topics: list[dict],
+) -> int:
+    """Draft up to ``want`` graphic-led or video-led posts. Returns how many landed.
+
+    Posters and clips are interleaved so a floor of 2 comes back as one of each
+    where both are available, rather than two posters. Acts already scheduled
+    this run are skipped, and each type carries its own period-stamped dedup key
+    so a poster refreshes monthly and a clip once a quarter.
+
+    ``slots`` are the week slots still open. When they run out the remaining
+    posts are queued with no fixed time: this is a floor the client asked for,
+    so a full week is a reason to queue behind it, not to skip it.
+    """
+    if want <= 0:
+        return 0
+    now = datetime.now(_EASTERN)
+    month = now.strftime("%Y-%m")
+    quarter = f"{now.year}Q{(now.month - 1) // 3 + 1}"
+    taken = {t.get("_act", "") for t in scheduled_topics}
+
+    # Build both lists lazily-ish: rendering a poster is cheap and local, but
+    # cutting a clip shells out to ffmpeg over the network, so stop as soon as
+    # there are enough candidates.
+    candidates: list[dict] = []
+    posters, clips = [], []
+    for artist in artists:
+        name = (artist.get("name") or "").strip()
+        if not name or name in taken:
+            continue
+        if len(posters) < want and f"tourposter_{_slugify(name)}_{month}" not in used:
+            if (t := _tour_poster_topic(name, period=month)):
+                posters.append(t)
+        if len(clips) < want and f"clip_{_slugify(name)}_{quarter}" not in used:
+            if (t := _act_clip_topic(name, period=quarter)):
+                clips.append(t)
+        if len(posters) + len(clips) >= want * 2:
+            break
+    for pair in zip_longest(posters, clips):
+        candidates.extend(t for t in pair if t)
+
+    drafted = 0
+    for topic in candidates:
+        if drafted >= want:
+            break
+        slot = slots[drafted] if drafted < len(slots) else None
+        media = topic.get("_image_path") or topic.get("_video_path") or ""
+        url = media if dry_run else upload_media(media)
+        if not url:
+            log.warning("Visual: could not host %s, skipping", media)
+            continue
+        is_video = bool(topic.get("_video_path"))
+        booking = config.STEVE_CALENDAR_LINK or config.LP_HOMEPAGE
+
+        posted = False
+        for platform in _platforms_for(topic["hook_type"]):
+            profile_id = buffer_profiles.get(platform, "")
+            if not profile_id and not dry_run:
+                continue
+            # Instagram captions do not linkify, so a booking URL there is dead
+            # weight under the one line doing the work.
+            text = topic["_text"] if platform == "instagram" else f"{topic['_text']}\n\nBooking: {booking}"
+            if post_draft_to_buffer(
+                text, profile_id, platform=platform, dry_run=dry_run,
+                scheduled_at=slot,
+                video=url if is_video else None,
+                image=None if is_video else url,
+            ):
+                posted = True
+                log.info(
+                    "  %s %s %s",
+                    platform,
+                    "clip" if is_video else "tour poster",
+                    slot.strftime("scheduled %a %b %d") if slot else "queued",
+                )
+        if not posted:
+            continue
+        used.add(topic_key(topic))
+        scheduled_topics.append(topic)
+        drafted += 1
+
+    if drafted < want:
+        log.warning(
+            "Visual posts: wanted %d, drafted %d. No further act has 3+ tour dates "
+            "or usable Vimeo footage that has not already been posted.",
+            want, drafted,
+        )
+    return drafted
 
 
 def _news_button_url(topic: dict, artist_url: str) -> str:
@@ -693,9 +880,42 @@ def _platforms_for(hook_type: str) -> tuple[str, ...]:
     """
     if hook_type == "agency_proof":
         return ("linkedin",)
-    if hook_type in ("original_artist_news", "historical_fact", "trivia", "upcoming_show"):
+    if hook_type in _NO_LINKEDIN_HOOKS:
         return ("instagram", "facebook")
     return ("linkedin", "instagram", "facebook")
+
+
+# Hook types that must never reach LinkedIn. The first three are fan content;
+# the last two announce a live date, which LinkedIn does not get at all (client
+# direction 2026-08-03: "completely eliminate any LinkedIn posts going on about
+# a show, or announcing a show"). LinkedIn is a proof channel for buyers.
+_NO_LINKEDIN_HOOKS = frozenset({
+    "original_artist_news", "historical_fact", "trivia",
+    "upcoming_show", "tour_poster",
+})
+
+
+def _linkedin_show_block(topic: dict, text: str) -> str:
+    """Why this copy must not go to LinkedIn, or "" if it is fine.
+
+    Routing by ``hook_type`` alone was not enough. A gig date can arrive
+    classified as ``tribute_news`` (the search model labels it, and it gets it
+    wrong often enough to matter), and once it does, ``_platforms_for`` waves it
+    through to LinkedIn as ordinary news. So the generated copy is checked too:
+    if it carries a ticket link, a show topic, or reads as a pitch to attend a
+    date still ahead of us, the LinkedIn draft is dropped and the other two
+    channels still get it.
+
+    This is a hard block, not a scoring nudge. There is no acceptable rate of
+    show posts on LinkedIn.
+    """
+    if topic.get("_is_show") or topic.get("hook_type") in ("upcoming_show", "tour_poster"):
+        return "show topic"
+    if (topic.get("ticket_url") or "").strip():
+        return "carries a ticket link"
+    if is_future_show_announcement(text):
+        return "copy reads as a show announcement"
+    return ""
 
 
 def _draft_topic(
@@ -730,10 +950,16 @@ def _draft_topic(
     source_url = (topic.get("url") or "").strip()
     og_image = fetch_og_image(source_url)
     cards = _cards_for_topic(topic, dry_run)
+    # Counts toward VISUAL_MIN_PER_WEEK: a card is a graphic we made, where a
+    # scraped og:image is just someone else's article thumbnail.
+    topic["_visual"] = bool(cards)
     for platform in _platforms_for(topic.get("hook_type", "")):
         text = strip_dashes(posts.get(platform, ""))
         if not text:
             log.warning("No %s post for %s '%s'", platform, label.lower(), topic.get("headline", "")[:60])
+            continue
+        if platform == "linkedin" and (why := _linkedin_show_block(topic, text)):
+            log.info("  LinkedIn dropped (%s): '%s'", why, topic.get("headline", "")[:60])
             continue
         profile_id = buffer_profiles.get(platform, "")
         if not profile_id and not dry_run:
@@ -901,6 +1127,7 @@ def main(
     single_artist: str = "",
     days: int | None = None,
     news_count: int | None = None,
+    visual_count: int | None = None,
 ) -> None:
     config.load_env()
 
@@ -928,6 +1155,27 @@ def main(
     buffer_profiles = discover_buffer_profiles()
     if not buffer_profiles and not dry_run:
         log.error("No Buffer profiles found, aborting")
+        return
+
+    # ── Visual-only mode (--visual-count) ─────────────────────────────────────
+    # Nothing but graphics and clips: N posts, queued with no fixed schedule, no
+    # news search, no scoring, no website articles. The captions are fixed and
+    # the media is the post, so this makes no Claude calls at all and costs
+    # nothing beyond the render and the upload.
+    if visual_count is not None:
+        log.info("Visual-only mode: up to %d graphic/video post(s), queued to Buffer", visual_count)
+        visual_topics: list[dict] = []
+        _draft_visual_posts(
+            artists=artists,
+            want=visual_count,
+            slots=[],  # no scheduled slots, everything queues
+            used=used,
+            buffer_profiles=buffer_profiles,
+            dry_run=dry_run,
+            scheduled_topics=visual_topics,
+        )
+        mark_topics_used(visual_topics, dry_run=dry_run)
+        log.info("=== Run complete. Visual posts drafted: %d ===", len(visual_topics))
         return
 
     all_new_topics: list[dict] = []
@@ -1043,6 +1291,11 @@ def main(
         if dropped:
             log.info("News-only mode: dropped %d show-announcement topic(s) from candidates", dropped)
 
+    # Declared out here so the visual floor below can run whatever the news
+    # pipeline did, including the weeks where it found nothing at all.
+    scheduled_topics: list[dict] = []  # news + facts only (shows use mark_show_used)
+    remaining_slots: list = list(week_slots)
+
     if not all_candidates and not show_candidates:
         log.info("No new topics found this week")
     elif not week_slots:
@@ -1103,7 +1356,6 @@ def main(
         )
 
         # Phase 3: generate posts and schedule to Buffer (shows and news unified)
-        scheduled_topics: list[dict] = []  # news + facts only (shows use mark_show_used)
         for i, topic in enumerate(selected):
             headline = topic.get("headline", "")[:80]
             slot = week_slots[i]
@@ -1128,10 +1380,14 @@ def main(
             source_url = (topic.get("url") or "").strip()
             og_image = fetch_og_image(source_url)
             cards = _cards_for_topic(topic, dry_run)
+            topic["_visual"] = bool(cards)
             for platform in platforms:
                 text = strip_dashes(posts.get(platform, ""))
                 if not text:
                     log.warning("No %s post generated for '%s'", platform, headline)
+                    continue
+                if platform == "linkedin" and (why := _linkedin_show_block(topic, text)):
+                    log.info("  LinkedIn dropped (%s): '%s'", why, headline)
                     continue
                 profile_id = buffer_profiles.get(platform, "")
                 if not profile_id and not dry_run:
@@ -1263,8 +1519,38 @@ def main(
                 mappings=mappings,
             )
 
-        all_new_topics.extend(scheduled_topics)
-        mark_topics_used(scheduled_topics, dry_run=dry_run)
+    # ── Visual floor: a minimum number of graphic/video-led posts per week ──
+    # Client direction 2026-08-03: "we need more images and video, can we set a
+    # minimum for those types of posts a week, maybe 2?". Card-eligible material
+    # is genuinely scarce in a typical week (the 2026-07-31 dry run produced zero
+    # cards across 16 drafts), so the shortfall is made up here from the two
+    # sources that do not depend on a story existing: the tour dates sheet and
+    # the agency's own Vimeo library.
+    #
+    # This is a floor, so it runs even when the week has no slot left; the extras
+    # queue behind the schedule rather than being dropped. Skipped in
+    # single-artist mode (a targeted run, not a week's content) and in news-only
+    # mode, where the caller asked for exactly N news posts.
+    if not single_artist and news_count is None and config.VISUAL_MIN_PER_WEEK:
+        already = sum(1 for t in all_new_topics + scheduled_topics if t.get("_visual"))
+        shortfall = config.VISUAL_MIN_PER_WEEK - already
+        log.info(
+            "Visual floor: %d of %d visual post(s) so far",
+            already, config.VISUAL_MIN_PER_WEEK,
+        )
+        if shortfall > 0:
+            _draft_visual_posts(
+                artists=artists,
+                want=shortfall,
+                slots=remaining_slots,
+                used=used,
+                buffer_profiles=buffer_profiles,
+                dry_run=dry_run,
+                scheduled_topics=scheduled_topics,
+            )
+
+    all_new_topics.extend(scheduled_topics)
+    mark_topics_used(scheduled_topics, dry_run=dry_run)
 
     # ── Website news posts (loveproductions.com via the LP News plugin) ────────
     if news_posts:
@@ -1333,6 +1619,15 @@ if __name__ == "__main__":
         "occupied week slots.",
     )
     parser.add_argument(
+        "--visual-count",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Visual-only mode: create up to N graphic/video posts (tour posters and act "
+        "clips) queued to Buffer with no fixed schedule. No news search, no articles, no "
+        "Claude calls.",
+    )
+    parser.add_argument(
         "--news-from-buffer",
         action="store_true",
         help="Convert the current Buffer Facebook drafts into website news posts and exit",
@@ -1369,7 +1664,6 @@ if __name__ == "__main__":
 
     if args.test_clips:
         config.load_env()
-        from lp.vimeo import clip_for_act
         if not vimeo_ffmpeg_available():
             sys.exit("ffmpeg/ffprobe not found on PATH; install ffmpeg to cut clips.")
         names = [args.artist] if args.artist else [a["name"] for a in fetch_airtable_artists()]
@@ -1464,4 +1758,5 @@ if __name__ == "__main__":
         single_artist=args.artist or "",
         days=args.days,
         news_count=args.news_count,
+        visual_count=args.visual_count,
     )
