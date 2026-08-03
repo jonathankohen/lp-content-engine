@@ -27,8 +27,12 @@ AI writing patterns to strip from every post regardless of platform.
 - Aspirational and inviting, "you need to be there," "tickets going fast."
 - Carousel captions: one bold idea per slide. Max 8 words on slide 1.
 - Hashtags: 5-10 at the end. Use genre, artist, and location tags.
+- **The CTA is always a DM ask plus link in bio, never a URL and never an email**
+  (client direction 2026-08-03). Captions do not linkify, so a URL is dead text,
+  and an email is a higher bar than a DM. See
+  [Instagram](../platforms/instagram.md).
 - Example: "Sold out. Again. 🎸 The Dolly Show returns this fall.
-  Tickets dropping Friday, link in bio."
+  DM us for booking availability. Link in bio for more."
 
 ## Facebook
 

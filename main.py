@@ -123,6 +123,14 @@ def _image_for(
     return card if (card and not has_source_url) else None
 
 
+# Instagram captions do not linkify, so a booking URL there is dead text and an
+# email is a higher bar than a DM. Client direction 2026-08-03: Instagram always
+# ends with a DM ask plus link in bio. The same shape is specified to the model
+# in generate_posts() and in platforms/instagram.md, so generated and hardcoded
+# captions match.
+_IG_BOOKING_CTA = "DM us for booking availability. Link in bio for more."
+
+
 def _tour_carousel_slides(
     artists: list[dict],
     *,
@@ -230,9 +238,8 @@ def _post_tour_carousel(
         profile_id = buffer_profiles.get(platform, "")
         if not profile_id and not dry_run:
             continue
-        # Instagram captions do not linkify, so a 140-character booking URL there
-        # is dead weight that buries the one line doing the work.
-        text = caption if platform == "instagram" else f"{caption}\n\nBooking: {booking}"
+        text = (f"{caption}\n\n{_IG_BOOKING_CTA}" if platform == "instagram"
+                else f"{caption}\n\nBooking: {booking}")
         if post_draft_to_buffer(
             text, profile_id, platform=platform, dry_run=dry_run,
             scheduled_at=slot, images=urls,
@@ -528,9 +535,8 @@ def _draft_visual_posts(
             profile_id = buffer_profiles.get(platform, "")
             if not profile_id and not dry_run:
                 continue
-            # Instagram captions do not linkify, so a booking URL there is dead
-            # weight under the one line doing the work.
-            text = topic["_text"] if platform == "instagram" else f"{topic['_text']}\n\nBooking: {booking}"
+            text = (f"{topic['_text']}\n\n{_IG_BOOKING_CTA}" if platform == "instagram"
+                    else f"{topic['_text']}\n\nBooking: {booking}")
             if post_draft_to_buffer(
                 text, profile_id, platform=platform, dry_run=dry_run,
                 scheduled_at=slot,

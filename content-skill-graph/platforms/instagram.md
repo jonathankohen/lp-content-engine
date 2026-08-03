@@ -21,7 +21,14 @@
   visible in the photo.
 - Hashtags: 5-10 relevant ones at the end. Use genre, artist name, city,
   and venue tags for discovery.
-- Always include a CTA. Use "link in bio for more" (points to our Linktree). Secondary options: "DM us" / "Email info@loveproductions.com" / "Tag someone who needs to see this show." Never include a raw URL in the caption.
+- Always end with the booking CTA, and on Instagram it is always the same shape:
+  **a DM ask, then link in bio.** Client direction 2026-08-03:
+  "DM us for booking availability. Link in bio for more."
+  Vary the wording slightly; do not vary the shape.
+- **Never put a URL or an email address in a caption.** Instagram captions do
+  not linkify, so a URL is dead text a reader cannot use, and asking for an
+  email is a higher bar than asking for a DM. This replaces the old
+  "Email info@loveproductions.com" option, which is no longer allowed here.
 
 ## Carousel Design Rules
 
@@ -29,7 +36,7 @@
 - One idea per slide. Max 30 words per slide.
 - Consistent color scheme across all slides (Love Productions brand colors).
 - Slide 1: Big bold text, no more than 8 words.
-- Last slide: "Link in bio" or booking contact (info@loveproductions.com) with handle. No raw URLs.
+- Last slide: "DM us for booking availability. Link in bio for more." No email, no raw URLs.
 
 ## Posting Strategy
 

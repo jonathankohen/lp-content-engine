@@ -719,6 +719,16 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "End the LinkedIn post with a single short booking line using "
         "info@loveproductions.com. One line, never a paragraph.\n\n"
     )
+    # Instagram cannot linkify a caption, so a URL there is dead text and an
+    # email address asks for more effort than a DM. Client direction 2026-08-03:
+    # keep Instagram to DM plus link in bio, nothing else.
+    instagram_cta_instruction = (
+        "End the Instagram caption with a booking CTA of exactly this shape: "
+        "a DM ask, then link in bio. For example \"DM us for booking availability. "
+        "Link in bio for more.\" Vary the wording slightly, but never put a URL or "
+        "an email address in an Instagram caption: captions do not linkify, so a "
+        "link is dead text, and the email is a higher bar than a DM.\n\n"
+    )
     user_prompt = (
         "Generate social media content for Love Productions based on this news topic:\n\n"
         f"Tribute Act: {tribute}\n"
@@ -744,6 +754,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "adjective and check the post still stands; if it collapses, it was fluff. "
         "If a post could describe any act, rewrite it so it could only describe this one.\n\n"
         f"{booking_cta_instruction}"
+        f"{instagram_cta_instruction}"
         f"{tribute_mention_instruction}"
         f"{quote_instruction}"
         "If a Ticket URL is provided, include it prominently in the Facebook post only "

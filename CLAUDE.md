@@ -367,6 +367,8 @@ The approved shape, now the worked example in `voice/reference-posts.md`:
 
 Event first (act, venue, when), then one light line in the agency's own voice that comments on the fact without teaching. Changes landed in `engine/hooks.md` (Re-Booking rules and examples rewritten, and naming the upcoming return is now encouraged rather than forbidden), `voice/reference-posts.md` (new "Do not explain their business to them" section plus a fifth pre-flight test), `voice/humanizer.md` (new "The explanatory kicker" section, top of file) and `audience/buyers.md`. Verified by real generation: LinkedIn came back essentially verbatim to the client's rewrite. **The fan channels deliberately still pitch attendance**, since "if you missed the first run" is aimed at fans, not buyers.
 
+**Instagram's CTA is always a DM ask plus link in bio (client direction 2026-08-03).** Never a URL, never an email. Captions do not linkify, so a URL is dead text a reader cannot act on, and asking for an email is a higher bar than asking for a DM. The shape the client gave: `"DM us for booking availability. Link in bio for more."` It is specified in three places that must stay in agreement: `instagram_cta_instruction` in `generate_posts()` (for model-written copy), `_IG_BOOKING_CTA` in `main.py` (for the hardcoded tour-carousel and clip captions, which previously had **no** CTA at all), and `platforms/instagram.md` + `voice/platform-tone.md` (the rule). This replaced the old "Email info@loveproductions.com" option, which `instagram.md` had been offering as an equal alternative. Verified by real generation on two hook types: no `@`, no `http`, CTA present.
+
 ## Environment variables (`.env`)
 
 ```
