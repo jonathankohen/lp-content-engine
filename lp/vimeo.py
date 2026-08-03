@@ -62,6 +62,28 @@ def ffmpeg_available() -> bool:
     return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
 
+def _names_act(title: str, act: str) -> bool:
+    """True if a video title actually names this act.
+
+    Tokens of 4+ characters from the act name, ignoring the descriptor after a
+    colon, with the filing-order article dropped. A majority must appear.
+    """
+    from .artist_links import display_act
+
+    head = display_act(act).split(":")[0]
+    tokens = [t for t in re.split(r"[^a-z0-9]+", head.lower()) if len(t) > 3]
+    if not tokens:
+        return False
+    low = title.lower()
+    return sum(t in low for t in tokens) >= max(1, (len(tokens) + 1) // 2)
+
+
+def _title_year(title: str) -> int:
+    """A 4-digit year in the title, or 0. Used to prefer the newest promo."""
+    years = [int(y) for y in re.findall(r"\b(20\d{2})\b", title or "")]
+    return max(years) if years else 0
+
+
 def find_act_video(act: str) -> dict | None:
     """Return the best Vimeo video for an act, or None.
 
@@ -105,10 +127,33 @@ def find_act_video(act: str) -> dict | None:
         log.info("No usable Vimeo video for %s", act)
         return None
 
+    # The Vimeo query is a full-text search over titles, descriptions and tags,
+    # so it happily returns other acts. Searching "Platters" on 2026-08-03
+    # returned "Phil Dirt and the Dozers" and a package-show sizzle reel
+    # alongside the act's own promos. Posting another act's footage under this
+    # act's name is the worst thing this function can do, so a title that does
+    # not name the act is not a candidate at all: no clip beats a wrong clip.
+    named = [v for v in usable if _names_act(v.get("name", ""), act)]
+    if not named:
+        log.info(
+            "No Vimeo video titled for %s (%d search hit(s) were other acts), skipping",
+            act, len(usable),
+        )
+        return None
+
     # Promo first; among promos (and among non-promos) prefer the shorter cut,
     # which is nearly always the tighter, more recent edit.
-    usable.sort(key=lambda v: (not _PROMO_RE.search(v.get("name", "")), v.get("duration", 0)))
-    best = usable[0]
+    #
+    # Recency outranks both: an act re-shoots its promo when the line-up changes,
+    # so the newest titled promo is the one showing who is actually on stage.
+    # Without this the 2025 sizzle beat "The Platters 2026 Promo Video" purely by
+    # being 49 seconds shorter, and the client spotted a stale line-up in it.
+    named.sort(key=lambda v: (
+        -_title_year(v.get("name", "")),
+        not _PROMO_RE.search(v.get("name", "")),
+        v.get("duration", 0),
+    ))
+    best = named[0]
     log.info("Vimeo pick for %s: %s (%ss)", act, best.get("name", "")[:60], best.get("duration"))
     return best
 

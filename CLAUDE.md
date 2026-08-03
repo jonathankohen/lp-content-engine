@@ -397,6 +397,18 @@ Event first (act, venue, when), then one light line in the agency's own voice th
 
 **`post_draft_to_buffer()` used to log "Buffer draft created (id=)" on failure**, because it logged before checking the id. The run log therefore read as a success while the function returned False, which is how two failed Facebook drafts nearly went unnoticed. It now logs an error and returns early.
 
+**Not every act on the roster is a tribute act (client correction 2026-08-03).** A draft read "the tribute act Priscilla Presley is exactly what your audience is thinking about". She is Priscilla Presley. The client: "She's not a tribute act. She's just an act." The same is true of **The Platters** (the continuing official organization, not a tribute to itself), **Tony Danza**, **Reza**, **Michael Griffin**, **Vitaly** and **Calpulli Mex Dance Co.** Calling one of them a tribute is a factual error about a real person, published under the agency's name.
+
+`is_tribute_act(act, original_artist)` in `lp/ai.py` is the single test: an act is a tribute **only** when `artists.md` gives it an original artist who is somebody else. A blank mapping counts as "not a tribute", deliberately: the failure it prevents (calling a real artist a tribute) is worse than the one it allows (not mentioning that a tribute is a tribute). Currently 15 of 24 acts classify as tributes.
+
+Wired into four places, since asserting it once was how the error got out:
+- The `generate_posts()` prompt label is now `Act:`, not `Tribute Act:`.
+- `act_kind_instruction` states plainly which one this act is, and for a non-tribute forbids "tribute act", "tribute band", "tribute show", "pays tribute to", "channels" and "recreates".
+- `generate_article()` says "a Love Productions act" instead of "Love Productions' tribute act", with the same prohibition.
+- **`build_hashtags()` substitutes `#TributeBand` → `#LiveEntertainment`** for non-tribute acts. A `#TributeBand` tag on Priscilla Presley is the same error as the copy saying it, just harder to spot, and it was the engine's own doing rather than the model's.
+
+**`find_act_video()` now requires the video title to name the act.** The Vimeo `query` parameter is a full-text search over titles, descriptions and tags, and the code took the top usable hit without ever checking it was the right act. Searching "Platters" on 2026-08-03 returned "Phil Dirt and the Dozers" and a package-show sizzle reel alongside the act's own promos, and the sort (promo first, then shortest) picked **"THE GOLDEN ERA OF ROCK & ROLL 2025 Sizzle"** over "The Platters 2026 Promo Video". The client spotted it: the footage was not the current line-up. Now `_names_act()` requires a majority of the act's name tokens in the title and returns **None** when nothing matches, because no clip beats another act's clip going out under this act's name. `_title_year()` also sorts the newest promo first, since an act re-shoots when the line-up changes, which is exactly the signal that was missed.
+
 ## Environment variables (`.env`)
 
 ```

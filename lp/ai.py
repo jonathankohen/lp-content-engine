@@ -655,6 +655,34 @@ def format_performance_context(top_posts: list[dict]) -> str:
 _ACT_LED_HOOKS = frozenset({"act_spotlight", "tribute_news", "rebooking", "testimonial"})
 
 
+def is_tribute_act(act: str, original_artist: str) -> bool:
+    """False when the act IS the artist, rather than a tribute to one.
+
+    Not every act on the roster is a tribute. Priscilla Presley is Priscilla
+    Presley; The Platters is the continuing official organization, not a tribute
+    to itself; Tony Danza, Reza and Michael Griffin are themselves. Calling one
+    of them "the tribute act X" is a factual error about a real person, published
+    under the agency's name, and the client caught exactly that on 2026-08-03:
+    "She's not a tribute act. She's just an act."
+
+    The test is the mapping in ``artists.md``: an act is a tribute only when it
+    has an original artist that is somebody else. A blank mapping is treated as
+    "not a tribute", which is the safe direction, since the failure it prevents
+    (calling a real artist a tribute) is worse than the one it allows (not
+    mentioning that a tribute is a tribute).
+    """
+    act_n = _normalize_act_name(act)
+    orig_n = _normalize_act_name(original_artist)
+    return bool(orig_n) and orig_n != act_n
+
+
+def _normalize_act_name(name: str) -> str:
+    n = (name or "").strip().lower()
+    n = re.sub(r"^the\s+", "", n)
+    n = re.sub(r",\s*the$", "", n)
+    return re.sub(r"[^a-z0-9]+", "", n)
+
+
 def generate_posts(topic: dict, skill_graph: str, performance_context: str = "") -> dict | None:
     """Generate LinkedIn, Instagram, and Facebook posts for a topic."""
     if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
@@ -701,13 +729,28 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     # Tribute act name: prefer the Airtable act (_act) since for original-artist
     # news the `artist` field can be the original artist.
     tribute = (topic.get("_act") or topic.get("artist", "")).strip()
+    is_tribute = is_tribute_act(tribute, topic.get("original_artist", ""))
     tribute_mention_instruction = (
-        f"IMPORTANT: Every platform post MUST mention the tribute act by name "
+        f"IMPORTANT: Every platform post MUST mention the act by name "
         f"('{tribute}') at least once, even for original-artist news, trivia, or "
         f"historical facts, tie the story back to {tribute}. (Social posts cannot "
         f"hyperlink a name; just name the act in the copy.)\n\n"
         if tribute
         else ""
+    )
+    # Some acts are the artist, not a tribute to one. Saying otherwise is a
+    # factual error about a real person, going out under the agency's name.
+    act_kind_instruction = (
+        ""
+        if not tribute else
+        f"{tribute} IS a tribute act, performing the music of "
+        f"{topic.get('original_artist', '')}.\n\n"
+        if is_tribute else
+        f"CRITICAL: {tribute} is NOT a tribute act. This is the artist "
+        f"themselves, appearing as themselves. NEVER call {tribute} a tribute "
+        f"act, a tribute band, a tribute show, or say they pay tribute to, "
+        f"channel, recreate or perform the music of anyone. Refer to them simply "
+        f"as the act, the artist, or by name.\n\n"
     )
     # LinkedIn is written to talent buyers, so its CTA is a booking appointment
     # rather than an email: a lower bar than composing a message, and the client
@@ -755,7 +798,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     )
     user_prompt = (
         "Generate social media content for Love Productions based on this news topic:\n\n"
-        f"Tribute Act: {tribute}\n"
+        f"Act: {tribute}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
         f"Headline: {topic.get('headline', '')}\n"
         f"{url_line}"
@@ -781,6 +824,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         f"{act_link_instruction}"
         f"{instagram_cta_instruction}"
         f"{tribute_mention_instruction}"
+        f"{act_kind_instruction}"
         f"{quote_instruction}"
         "If a Ticket URL is provided, include it prominently in the Facebook post only "
         "as the call-to-action link (e.g., 'Get tickets: <url>'). Do NOT include the ticket link "
@@ -851,6 +895,10 @@ _HOOK_HASHTAGS = {
     "historical_fact": ["MusicHistory", "LiveMusic", "TributeBand"],
 }
 _DEFAULT_HASHTAGS = ["LiveMusic", "TributeBand", "LiveEntertainment"]
+# Same tags with the tribute claim removed, for acts that ARE the artist. A
+# #TributeBand tag on Priscilla Presley is the same factual error as the copy
+# saying it, just harder to notice.
+_NON_TRIBUTE_SUBSTITUTE = {"TributeBand": "LiveEntertainment", "TributeBands": "OnTour"}
 
 
 def _to_hashtag(name: str) -> str:
@@ -879,7 +927,10 @@ def build_hashtags(topic: dict, limit: int = _MAX_HASHTAGS) -> list[str]:
     add(_to_hashtag(display_act(act) if act else ""))
     for original in re.split(r",|&|/| and ", topic.get("original_artist", "") or ""):
         add(_to_hashtag(original.strip()))
+    tribute = is_tribute_act(act, topic.get("original_artist", ""))
     for word in _HOOK_HASHTAGS.get(topic.get("hook_type", ""), _DEFAULT_HASHTAGS):
+        if not tribute:
+            word = _NON_TRIBUTE_SUBSTITUTE.get(word, word)
         add(f"#{word}")
     return tags
 
@@ -969,11 +1020,22 @@ def generate_article(
     )
     tie_in_instruction = ""
     if tribute:
+        # See is_tribute_act(): several roster acts ARE the artist. Describing
+        # one of them as a tribute is a factual error about a real person.
+        if is_tribute_act(tribute, topic.get("original_artist", "")):
+            act_description = "Love Productions' tribute act"
+            tie_in_hint = ("connecting the news to the act naturally (e.g. how the act "
+                           "carries this artist's music/spirit to stages today)")
+        else:
+            act_description = "a Love Productions act"
+            tie_in_hint = ("connecting the news to the act naturally. NEVER describe "
+                           f"{tribute} as a tribute act, a tribute band or a tribute "
+                           "show, and never say they pay tribute to, channel or "
+                           "recreate anyone: this is the artist themselves")
         tie_in_instruction = (
-            "\nTRIBUTE ACT TIE-IN AND BOOKING CTA (both are REQUIRED):\n"
-            f"- The article MUST mention {tribute}, Love Productions' tribute act, at "
-            "least once, connecting the news to the act naturally (e.g. how the act "
-            "carries this artist's music/spirit to stages today). Write the act's name "
+            "\nACT TIE-IN AND BOOKING CTA (both are REQUIRED):\n"
+            f"- The article MUST mention {tribute}, {act_description}, at "
+            f"least once, {tie_in_hint}. Write the act's name "
             "as plain text, do NOT hyperlink it.\n"
             "- End the article with a short closing paragraph inviting bookings, "
             f'phrased like: "If you\'re interested in booking {tribute}, please follow '
@@ -999,7 +1061,7 @@ def generate_article(
     user_prompt = (
         "Write a short website news article for the Love Productions site "
         "(loveproductions.com) based on this topic:\n\n"
-        f"Tribute Act: {tribute}\n"
+        f"Act: {tribute}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
         f"Headline: {topic.get('headline', '')}\n"
         f"Summary: {topic.get('summary', '')}\n"

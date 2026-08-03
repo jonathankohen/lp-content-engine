@@ -223,6 +223,7 @@ def edit_post_draft(
     platform: str = "",
     text: str | None = None,
     image: str | None = None,
+    video: str | None = None,
     scheduled_at: datetime | None = None,
     dry_run: bool = False,
 ) -> bool:
@@ -275,9 +276,14 @@ def edit_post_draft(
     if platform == "facebook":
         post_input["metadata"] = {"facebook": {"type": "post"}}
     elif platform == "instagram":
-        post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
-        image = image or _IG_PLACEHOLDER
-    if image:
+        post_input["metadata"] = {
+            "instagram": {"type": "reel" if video else "post", "shouldShareToFeed": True}
+        }
+        if not video:
+            image = image or _IG_PLACEHOLDER
+    if video:
+        post_input["assets"] = [{"video": {"url": video}}]
+    elif image:
         post_input["assets"] = [{"image": {"url": image}}]
 
     data = _buffer_gql(
