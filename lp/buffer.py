@@ -225,6 +225,7 @@ def edit_post_draft(
     image: str | None = None,
     video: str | None = None,
     scheduled_at: datetime | None = None,
+    keep_scheduled: bool = False,
     dry_run: bool = False,
 ) -> bool:
     """Edit an existing Buffer draft in place: its copy, its image, or both.
@@ -259,10 +260,20 @@ def edit_post_draft(
     # 2026-08-03); "scheduled" is not a member and the mutation rejects it. The
     # time is carried by ShareMode + dueAt, not by schedulingType, exactly as
     # post_draft_to_buffer already does it.
+    # keep_scheduled edits a post that is already queued to send, leaving it
+    # queued. It is the one case where saveToDraft must be False, so it demands
+    # an explicit future `scheduled_at`: the 2026-08-03 incident was caused by an
+    # edit with neither saveToDraft NOR a dueAt, which re-slotted the post into a
+    # past automatic slot and published it on the spot. An explicit future
+    # customScheduled time cannot do that.
+    if keep_scheduled and not scheduled_at:
+        raise ValueError("keep_scheduled requires scheduled_at (a future time)")
+    if keep_scheduled and scheduled_at <= datetime.now(timezone.utc):
+        raise ValueError(f"keep_scheduled needs a FUTURE time, got {scheduled_at}")
     post_input: dict = {
         "id":             post_id,
         "schedulingType": "automatic",
-        "saveToDraft":    True,
+        "saveToDraft":    not keep_scheduled,
     }
     if text is not None:
         post_input["text"] = text

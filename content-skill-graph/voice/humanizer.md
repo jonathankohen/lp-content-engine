@@ -19,8 +19,17 @@ has now rejected it twice.
 - "Not a one-off. Not a follow-up. A third time."
 - "That's the whole story."
 
-All of these explain a booking to a booker. Cut them. If a line must follow the
-fact, it comments in the agency's own voice without teaching:
+A second family says something the reader already knows, on any platform, to any
+audience. It is padding, and the client named it directly (2026-08-03):
+
+- "Her name isn't going anywhere."
+- "The name still draws."
+- "Getting booked twice means the act is great."
+- "If your crowd knows the difference, this is the one."
+
+Cut them all. Test: delete the sentence. If the reader loses no *information*,
+it was fluff, however well it reads. If a line must follow the fact, it comments
+in the agency's own voice without teaching:
 
 - "Repeat dates are the kind of review we like best." (client-approved)
 

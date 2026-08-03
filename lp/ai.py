@@ -769,6 +769,15 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "End the LinkedIn post with a single short booking line using "
         "info@loveproductions.com. One line, never a paragraph.\n\n"
     )
+    # Facebook ends with a booking line, in the shape the client used in their
+    # own rewrite (2026-08-03): the source link, then "Booking inquiries:" and
+    # the agency email. Facebook does linkify, but the email is what they wrote,
+    # and unlike Instagram there is no DM convention to lean on.
+    facebook_cta_instruction = (
+        "End the Facebook post with the source link (if there is one) and then "
+        "one final line: 'Booking inquiries: info@loveproductions.com'. Nothing "
+        "after it.\n\n"
+    )
     # Instagram cannot linkify a caption, so a URL there is dead text and an
     # email address asks for more effort than a DM. Client direction 2026-08-03:
     # keep Instagram to DM plus link in bio, nothing else.
@@ -820,9 +829,21 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "the first line. One fact per post, not a stack. Vary your sentence length. Cut every "
         "adjective and check the post still stands; if it collapses, it was fluff. "
         "If a post could describe any act, rewrite it so it could only describe this one.\n\n"
+        "SHOW, DO NOT TELL. This is the most common thing wrong with these posts. State the "
+        "facts and stop. Never add a sentence that interprets them, sells them, or explains "
+        "what they mean. Every reader, on every platform, already knows what a re-booking, a "
+        "sold-out run or a famous name signifies. Delete any sentence of these kinds:\n"
+        "- Explaining significance: 'venues don't repeat a booking that didn't deliver', "
+        "'when a venue books you twice, they're telling you something'.\n"
+        "- Stating the obvious: 'her name isn't going anywhere', 'the name still draws', "
+        "'that says everything', 'that's the whole story'.\n"
+        "- Telling the reader what to think or feel about the act, or asserting it is great, "
+        "special, the real deal, or worth booking. Let the fact do that.\n"
+        "If removing every such sentence leaves almost nothing, that is the correct post.\n\n"
         f"{booking_cta_instruction}"
         f"{act_link_instruction}"
         f"{instagram_cta_instruction}"
+        f"{facebook_cta_instruction}"
         f"{tribute_mention_instruction}"
         f"{act_kind_instruction}"
         f"{quote_instruction}"

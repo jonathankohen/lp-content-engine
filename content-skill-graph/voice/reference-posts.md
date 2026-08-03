@@ -149,6 +149,53 @@ Y" or "when X happens, it tells you Y" is the failure, whatever the topic:
 re-bookings, testimonials, spotlights, agency posts. Assume the reader knows
 this industry better than we do.
 
+## Show, do not tell (client, 2026-08-03)
+
+The same session, on a Facebook post. This one is not about buyers specifically:
+it is about padding a post with sentences that state what the reader already
+knows. **It applies to every platform.**
+
+Client, verbatim: "We need to get rid of some of the fluff. And we should never
+be explaining talent buyers' jobs to them. We don't have to say the obvious,
+like: 'Her name isn't going anywhere,' or 'getting booked twice means the act is
+great,' etc. They know these things. Let's show, not tell."
+
+### What went out
+
+> Priscilla Presley just announced she's writing another book.
+>
+> Her life has been the subject of two major films. **The name still draws.**
+>
+> Priscilla Presley brings that story to your stage.
+
+### The client's rewrite
+
+> Priscilla Presley just confirmed she's writing a new memoir, the follow-up to
+> her original, covering her life, her losses, and what came after. Two films
+> have told her story.
+>
+> Read more: https://www.yahoo.com/entertainment/celebrity/articles/priscilla-presley-steps-mallorca-reflecting-230030001.html
+>
+> Booking inquiries: info@loveproductions.com
+
+### The difference
+
+- **The rewrite carries more fact and less opinion.** "the follow-up to her
+  original, covering her life, her losses, and what came after" is all
+  information. It replaced "The name still draws", which is the writer's
+  assessment and tells the reader nothing.
+- **Nothing is sold.** No "brings that story to your stage", no claim about what
+  the act would do for you. The facts and a booking line, in that order.
+- **It is not shorter for its own sake.** The first sentence is longer than what
+  it replaced. Cutting fluff means cutting the *interpretation*, not the detail.
+
+### The rule
+
+Say what happened. Then stop. If a sentence could be deleted and the reader
+would lose no information, delete it. That includes any sentence asserting the
+act is great, the name is big, the booking is proof, or the audience will love
+it. The reader can see all of that from the fact itself.
+
 ## The test, before any post goes out
 
 1. Read it aloud. Does it sound like the rejected post or the Reliant one?
