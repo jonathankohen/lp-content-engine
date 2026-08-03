@@ -173,7 +173,11 @@ def post_draft_to_buffer(
         # Normally no image asset, so the URL in the body unfurls a native
         # link-preview card. A card post has no URL to unfurl, so it passes
         # assets explicitly and they are attached here.
-        post_input["metadata"] = {"facebook": {"type": "video" if video else "post"}}
+        # PostTypeFacebook is post|reel|story (introspected 2026-08-03). There is
+        # no "video" member, and sending one is a hard GraphQL error. A clip is a
+        # normal post carrying a video asset; "reel" is wrong for our 1:1 clips,
+        # which Facebook Reels expects vertical.
+        post_input["metadata"] = {"facebook": {"type": "post"}}
         if video_asset or assets:
             post_input["assets"] = video_asset or [{"image": {"url": u}} for u in assets]
     elif platform == "instagram":
@@ -204,8 +208,13 @@ def post_draft_to_buffer(
         log.error("Buffer draft error: %s", result["message"])
         return False
     post_id = result.get("post", {}).get("id", "")
+    if not post_id:
+        # An empty result means the GraphQL call itself failed. Logging "created"
+        # here read as a success in the run log while the function returned False.
+        log.error("Buffer draft NOT created for %s, see the GraphQL error above", platform)
+        return False
     log.info("Buffer draft created (id=%s)", post_id)
-    return bool(post_id)
+    return True
 
 
 def edit_post_draft(
