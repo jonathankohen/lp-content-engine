@@ -322,6 +322,33 @@ All 134 Buffer drafts were deleted on 2026-07-31 to start clean. There is no dra
 
 **Also queued: full skill-graph rewrite.** Before mass drafting resumes, the `content-skill-graph/` markdown is to be **rewritten, not patched**, grounded in real published loveproductions.com copy. Interview the client contact first with comprehensive questions about how content should be made, and ask which specific kinds of real examples they can supply. `brand-voice.md` has an HTML-comment placeholder for pasting more client-approved examples.
 
+## Deployment: the scheduled run is `origin/main`, and it is easy to forget
+
+`.github/workflows/weekly.yml` runs `python main.py` every Monday at 07:13 UTC on a plain
+`actions/checkout@v4` of the default branch. **The client sees whatever is on `origin/main`,
+not what is on this machine.**
+
+**This bit us for three weeks (found 2026-08-03).** Nine commits sat unpushed from 2026-07-16
+onward, so the July 20, July 27 and August 3 runs all executed pre-`strip_dashes` code. The
+drafts came out full of em dashes and five paragraphs long, and it read like the fixes had not
+worked rather than like they had never shipped. **Before concluding that a change did not work,
+run `git rev-list --left-right --count origin/main...main` and check the commit that the
+relevant Actions run actually used.**
+
+**A second, quieter version of the same failure: env vars the code reads but the workflow never
+passes.** Every one of these degrades gracefully to "feature off", so nothing errors and the run
+reports success. Found unpassed on 2026-08-03 and now wired up: `TOUR_DATES_SHEET_ID` (no ticket
+URLs, no venue names, no tour posters), `LP_NEWS_URL` / `LP_NEWS_SECRET` (**no website articles
+and no media hosting**, so `upload_media()` returns None and every card, poster and clip is
+dropped), `STEVE_CALENDAR_LINK` (CTA silently falls back to info@), `META_PAGE_ACCESS_TOKEN` (no
+performance context), `VIMEO_*` (no clips). The workflow also installs `ffmpeg`, which is not in
+the runner image and without which clips are skipped silently.
+
+**When adding an env var, add it to the workflow in the same commit.** The tuning knobs
+(`SHOW_BASE_SCORE`, `MAX_SHOWS_PER_WEEK`, `VISUAL_MIN_PER_WEEK`, `LINKEDIN_RESERVED_SLOTS`,
+`REBOOKING_MAX_PER_RUN`, `COST_CAP_USD`, `CARD_DIR`, `VIDEO_DIR`) are deliberately left out,
+since their code defaults are the intended production values.
+
 ## Environment variables (`.env`)
 
 ```

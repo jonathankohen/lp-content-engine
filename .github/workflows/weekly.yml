@@ -16,6 +16,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -32,3 +35,24 @@ jobs:
           FOUND_NEWS_STORIES_SHEETS_ID: ${{ secrets.FOUND_NEWS_STORIES_SHEETS_ID }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
           LINKEDIN_ANALYTICS_CSV_CONTENT: ${{ secrets.LINKEDIN_ANALYTICS_CSV_CONTENT }}
+
+          # Everything below was read by the code but never passed here, so the
+          # scheduled run silently skipped the feature (2026-08-03). An unset
+          # secret resolves to an empty string, which each of these degrades to
+          # gracefully, so listing one before it exists is safe and means the
+          # feature switches on the moment the secret is added.
+          # Ticket URLs, venue names (so re-bookings resolve), and tour posters.
+          TOUR_DATES_SHEET_ID: ${{ secrets.TOUR_DATES_SHEET_ID }}
+          # Website articles, and the host for every rendered card, poster and
+          # clip: without these upload_media() returns None and the visual
+          # phases draft nothing at all.
+          LP_NEWS_URL: ${{ secrets.LP_NEWS_URL }}
+          LP_NEWS_SECRET: ${{ secrets.LP_NEWS_SECRET }}
+          # The LinkedIn and article booking CTA. Falls back to info@ when unset.
+          STEVE_CALENDAR_LINK: ${{ secrets.STEVE_CALENDAR_LINK }}
+          # Top-performing posts, injected as style context into generation.
+          META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
+          # Act clips. The token needs the video_files scope.
+          VIMEO_ACCESS_TOKEN: ${{ secrets.VIMEO_ACCESS_TOKEN }}
+          VIMEO_CLIENT_ID: ${{ secrets.VIMEO_CLIENT_ID }}
+          VIMEO_CLIENT_SECRET: ${{ secrets.VIMEO_CLIENT_SECRET }}
