@@ -96,6 +96,59 @@ Reliant has roughly 2,900 followers and this post earned 68 likes. Copy the
 format because the client asked for it and because it is genuinely tighter than
 what we were producing. Do not treat it as proof of a channel that is winning.
 
+## Do not explain their business to them (client, 2026-08-03)
+
+The client read a live re-booking post and gave us the rewrite he wanted. This is
+the second worked example in this file, and it is about one specific failure:
+**telling a talent buyer what a fact means.**
+
+### What went out
+
+> When a venue books you twice, they're telling you something.
+>
+> Orange Blossom Opry brought Free Fallin: The Tom Petty Concert Experience back
+> for a second run. If you haven't caught this show yet, that track record is
+> reason enough to go.
+
+and on LinkedIn:
+
+> Orange Blossom Opry has booked Free Fallin: The Tom Petty Concert Experience
+> twice. Venues don't repeat a booking that didn't deliver.
+
+### What the client wants instead
+
+> Free Fallin: The Tom Petty Concert Experience will be returning to the Orange
+> Blossom Opry for a second time this October. Repeat dates are the kind of
+> review we like best.
+>
+> Availability: https://www.loveproductions.com/go/steve
+
+### The difference
+
+- **The rejected version opens with a lesson.** "When a venue books you twice,
+  they're telling you something" and "venues don't repeat a booking that didn't
+  deliver" both explain the significance of a re-booking to someone who books
+  talent for a living. They already know. It reads as condescension.
+- **The approved version opens with the event.** Act, venue, when. The reader
+  draws the conclusion themselves, which is the only way a conclusion ever
+  lands with a professional.
+- **It is specific where the other was vague.** "returning ... for a second time
+  this October" beats "brought back for a second run": it is a real date and a
+  real commitment.
+- **The editorial line comes last and is light.** "Repeat dates are the kind of
+  review we like best" is the agency speaking in its own voice, with a bit of
+  personality. It comments on the fact. It does not explain it.
+- **No pitch to attend.** The rejected Facebook version said "reason enough to
+  go", turning proof into a ticket ad. The approved version sells availability.
+
+### The rule
+
+State the fact. Stop. If you add a line after it, that line may have
+personality, but it may not have a lesson in it. Anything of the shape "X means
+Y" or "when X happens, it tells you Y" is the failure, whatever the topic:
+re-bookings, testimonials, spotlights, agency posts. Assume the reader knows
+this industry better than we do.
+
 ## The test, before any post goes out
 
 1. Read it aloud. Does it sound like the rejected post or the Reliant one?
@@ -103,3 +156,5 @@ what we were producing. Do not treat it as proof of a channel that is winning.
 3. Count the sentences. On LinkedIn, more than four means cut.
 4. Find the one fact a competitor could not also claim. Is it in the first line?
    If it is in paragraph two, move it up. If there isn't one, do not post.
+5. Is there a sentence explaining what the fact means? Delete it. If deleting it
+   leaves nothing, the fact was not strong enough to post.

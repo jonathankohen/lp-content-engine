@@ -34,6 +34,11 @@ and all of it appeared in the post the client rejected (see
 
 - Explaining what makes a good act, or why audiences enjoy live music.
 - Telling them what a booking will do for their venue. They know.
+- **Explaining what a fact about our own act means.** A re-booking, a sold-out
+  run, a testimonial: state it and stop. "Venues don't repeat a booking that
+  didn't deliver" tells a talent buyer their own job. Client rejected this
+  wording on 2026-08-03; the approved rewrite is in
+  [Reference Posts](../voice/reference-posts.md).
 - Claims shaped like data with no number behind them ("fills seats before the
   first ad runs").
 - Any paragraph they have to read to reach the point.

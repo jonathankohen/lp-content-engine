@@ -64,18 +64,27 @@ A venue has booked one of our acts more than once. In live entertainment this is
 the strongest proof there is: a buyer who took the risk once took it again.
 
 - Best on: LinkedIn, Instagram, Facebook
-- Lead with the count and the venue. "Third time at the Ridgefield Playhouse."
-  Never open with a vague "back by popular demand" and no numbers.
-- Name the specific venue and the years. If the summary gives you confirmed
-  dates, use them. Do not round, exaggerate, or guess at a number.
-- This is about the act's track record, not about attending anything. Do not
-  turn it into a ticket pitch, and do not mention any upcoming date.
+- Lead with the act, the venue and the fact of the return. Naming when the
+  return happens ("for a second time this October") is good: it makes the
+  booking concrete rather than a statistic.
+- Name the specific venue. Do not round, exaggerate, or guess at a number.
+- **Never explain to the reader what a re-booking means.** They book talent for
+  a living. Lines like "venues do not repeat a booking that did not sell" or
+  "when a venue books you twice, they're telling you something" tell a
+  professional their own job, which is the single fastest way to lose them.
+  State the fact and stop, or follow it with one light line in the agency's own
+  voice, not a lesson. See [Reference Posts](../voice/reference-posts.md).
+- This is track record, not a ticket pitch. Never add tickets, on-sale dates,
+  "don't miss", or any call to attend.
 - Use it sparingly. It only lands because it is rare.
-- Examples:
-  - "The Ridgefield Playhouse has booked Arrival from Sweden three times since
-    2023. Venues do not repeat a booking that did not sell."
-  - "Second run at the Suffolk Theater in two years for The Fab Four. Booking
-    for spring: info@loveproductions.com."
+- The client-approved example (2026-08-03), copy its shape:
+  - "Free Fallin: The Tom Petty Concert Experience will be returning to the
+    Orange Blossom Opry for a second time this October. Repeat dates are the
+    kind of review we like best."
+  - Note what it does: names the act in full, names the venue, says when, and
+    then one short line of personality that comments on the fact **without
+    explaining it**. "The kind of review we like best" is the agency talking,
+    not the agency teaching.
 
 ## Testimonial
 

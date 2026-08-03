@@ -7,6 +7,27 @@ See [Reference Posts](reference-posts.md) for a real post the client rejected as
 "so AI", broken down line by line, next to the post he asked us to copy. If you
 read one thing before writing, read that.
 
+## The explanatory kicker
+
+The sentence after the fact, which tells the reader what the fact means. It is
+the most common thing wrong with a post that is otherwise fine, and the client
+has now rejected it twice.
+
+- "Venues don't repeat a booking that didn't deliver."
+- "When a venue books you twice, they're telling you something."
+- "That says everything."
+- "Not a one-off. Not a follow-up. A third time."
+- "That's the whole story."
+
+All of these explain a booking to a booker. Cut them. If a line must follow the
+fact, it comments in the agency's own voice without teaching:
+
+- "Repeat dates are the kind of review we like best." (client-approved)
+
+Test: does the sentence tell the reader something about their own industry
+rather than about our act? Then it goes.
+
+
 ## Length is the loudest tell
 
 Before any of the patterns below, check the length. A post that is twice as long
