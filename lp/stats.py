@@ -122,17 +122,27 @@ def rebooking_stat(topic: dict) -> dict | None:
 
     A venue booking the same act repeatedly is the most direct answer to the
     only question a talent buyer is actually asking, so this is the card that
-    earns its slot. Two bookings is a coincidence and reads as weak proof, so
-    the floor is three.
+    earns its slot.
+
+    **The floor is two, not three (client direction 2026-08-03).** It was three
+    on the reasoning that two bookings is a coincidence and reads as weak proof.
+    The client saw a live 2x post, liked it, and asked for a graphic on it and
+    on every re-booking after it. That also fixes the practical problem: only
+    one pairing in the whole dataset has ever reached 3+, so at a floor of three
+    this card effectively never fired.
     """
     count = int(topic.get("_rebooking_count") or 0)
     venue = (topic.get("_venue") or "").strip()
     act = (topic.get("_act") or topic.get("artist") or "").strip()
-    if count < 3 or not venue or not act:
+    if count < 2 or not venue or not act:
         return None
 
     span = (topic.get("_span") or "").strip()
-    context = f"{venue} has brought {act} back {count} times"
+    # "back 2 times" reads like a placeholder. Now that two is a valid count,
+    # the small numbers need words.
+    times = {2: "twice", 3: "three times", 4: "four times", 5: "five times"}.get(
+        count, f"{count} times")
+    context = f"{venue} has brought {act} back {times}"
     context = f"{context}, {span}." if span else f"{context}."
     return {
         "value":   f"{count}x",

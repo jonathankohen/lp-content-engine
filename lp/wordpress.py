@@ -40,6 +40,60 @@ _TIMEOUT = 60  # image sideloading on the server side can be slow
 _media_cache: dict[str, str] = {}
 
 
+# The host 413s any request body over roughly 1MB, before PHP runs. Base64
+# inflates by a third, so a single-shot upload has to stay under ~750KB of file.
+# Both numbers are set well clear of the cliff rather than at it, since the exact
+# limit is the host's to change and we would rather chunk unnecessarily than fail.
+_SINGLE_SHOT_MAX = 500 * 1024      # send files above this in pieces
+_CHUNK_BYTES = 400 * 1024          # ~547KB once base64-encoded
+
+
+def _upload_chunked(base: str, key: str, filename: str, blob: bytes,
+                    headers: dict) -> str | None:
+    """Send a file to /upload-media-chunk in order, return the attachment URL.
+
+    The server appends each piece to a temp file and assembles on the last one,
+    so the pieces must arrive in order and any failure aborts the whole upload:
+    a partial file that later got treated as complete would be a corrupt video.
+    The server answers a dedup hit on the first chunk, so an already-hosted file
+    costs one request rather than all of them.
+    """
+    endpoint = base + "/upload-media-chunk"
+    chunks = [blob[i:i + _CHUNK_BYTES] for i in range(0, len(blob), _CHUNK_BYTES)]
+    total = len(chunks)
+    log.info("Uploading %s in %d chunk(s), %.1f MB", filename, total, len(blob) / 1e6)
+
+    for i, piece in enumerate(chunks):
+        payload = {
+            "key":            key,
+            "filename":       filename,
+            "index":          i,
+            "total":          total,
+            "content_base64": base64.b64encode(piece).decode("ascii"),
+        }
+        try:
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001, a failed upload must not end the run
+            log.error("Chunk %d/%d request error: %s", i + 1, total, exc)
+            return None
+        if not resp.ok:
+            log.error("Chunk %d/%d failed %d: %s", i + 1, total, resp.status_code, resp.text[:200])
+            return None
+        try:
+            data = resp.json() or {}
+        except Exception:  # noqa: BLE001
+            log.error("Chunk %d/%d returned non-JSON: %s", i + 1, total, resp.text[:200])
+            return None
+        # A dedup hit short-circuits the rest of the upload.
+        if data.get("url"):
+            if data.get("skipped") and i == 0:
+                log.info("Already hosted, skipping %d remaining chunk(s)", total - 1)
+            return data["url"]
+
+    log.error("Final chunk returned no URL for %s", filename)
+    return None
+
+
 def upload_media(path: str, key: str = "") -> str | None:
     """Upload a local image to the site's media library, return its public URL.
 
@@ -71,15 +125,27 @@ def upload_media(path: str, key: str = "") -> str | None:
     if key in _media_cache:
         return _media_cache[key]
 
-    endpoint = config.LP_NEWS_URL.rsplit("/", 1)[0] + "/upload-media"
+    base = config.LP_NEWS_URL.rsplit("/", 1)[0]
+    headers = {
+        "Content-Type":     "application/json",
+        "X-LP-News-Secret": config.LP_NEWS_SECRET,
+    }
+
+    # Anything that will not fit in one request body goes up in pieces. The host
+    # rejects a body over roughly 1MB with a 413 before PHP sees it (measured
+    # 2026-08-03), which is what silently killed video: a clip is 3.7 to 6.1MB.
+    if len(blob) > _SINGLE_SHOT_MAX:
+        url = _upload_chunked(base, key, os.path.basename(path), blob, headers)
+        if url:
+            _media_cache[key] = url
+            log.info("Hosted (chunked): %s", url)
+        return url
+
+    endpoint = base + "/upload-media"
     payload = {
         "key":            key,
         "filename":       os.path.basename(path),
         "content_base64": base64.b64encode(blob).decode("ascii"),
-    }
-    headers = {
-        "Content-Type":     "application/json",
-        "X-LP-News-Secret": config.LP_NEWS_SECRET,
     }
 
     try:

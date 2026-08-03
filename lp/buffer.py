@@ -208,6 +208,71 @@ def post_draft_to_buffer(
     return bool(post_id)
 
 
+def edit_post_draft(
+    post_id: str,
+    *,
+    platform: str = "",
+    text: str | None = None,
+    image: str | None = None,
+    scheduled_at: datetime | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """Edit an existing Buffer draft in place: its copy, its image, or both.
+
+    Used to repair drafts that are already queued rather than deleting and
+    regenerating them, which would lose the human review already done and burn
+    a second pair of Claude calls.
+
+    ``EditPostInput`` requires ``id`` **and** ``schedulingType``, and the
+    per-network metadata rules from create apply here too: Facebook and
+    Instagram edits are rejected without ``metadata.<network>.type``, and an
+    Instagram edit needs at least one image (the LP logo placeholder is the
+    fallback). Only fields that are passed are sent, so editing text alone
+    leaves any attached asset untouched.
+    """
+    if dry_run:
+        log.info("[dry-run] would edit %s draft %s%s%s", platform, post_id,
+                 " (text)" if text is not None else "",
+                 " (image)" if image else "")
+        return True
+
+    post_input: dict = {"id": post_id, "schedulingType": "scheduled" if scheduled_at else "automatic"}
+    if text is not None:
+        post_input["text"] = text
+    if scheduled_at:
+        post_input["mode"] = "customScheduled"
+        post_input["dueAt"] = scheduled_at.isoformat()
+    if platform == "facebook":
+        post_input["metadata"] = {"facebook": {"type": "post"}}
+    elif platform == "instagram":
+        post_input["metadata"] = {"instagram": {"type": "post", "shouldShareToFeed": True}}
+        image = image or _IG_PLACEHOLDER
+    if image:
+        post_input["assets"] = [{"image": {"url": image}}]
+
+    data = _buffer_gql(
+        """
+        mutation EditDraft($input: EditPostInput!) {
+          editPost(input: $input) {
+            ... on PostActionSuccess { post { id } }
+            ... on MutationError { message }
+          }
+        }
+        """,
+        {"input": post_input},
+    )
+    result = data.get("data", {}).get("editPost", {})
+    if "message" in result:
+        log.error("Buffer edit error (%s): %s", post_id, result["message"])
+        return False
+    ok = bool(result.get("post", {}).get("id", ""))
+    if not ok:
+        # An empty result means the GraphQL call itself failed (see the delete
+        # helpers: spreading the wrong fragments 400s silently).
+        log.error("Buffer edit returned nothing for %s, treating as failure", post_id)
+    return ok
+
+
 # ── Occupied slot detection ───────────────────────────────────────────────────
 
 

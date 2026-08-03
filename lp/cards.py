@@ -345,14 +345,30 @@ def _finish(img: Image.Image, act: str, size: tuple[int, int],
     pad = int(size[0] * 0.066)
     draw.rectangle([0, size[1] - 10, size[0], size[1]], fill=RED)
 
-    act_font = _font("bold", 27 if size[0] > 1100 else 30)
-    draw.text((pad, size[1] - pad - 34), act.upper(), font=act_font,
-              fill=BODY if light else PAPER)
-
     mark_font = _font("regular", 21 if size[0] > 1100 else 23)
     mark = "LOVEPRODUCTIONS.COM"
-    draw.text((size[0] - pad - _text_width(draw, mark, mark_font), size[1] - pad - 30),
+    mark_w = _text_width(draw, mark, mark_font)
+    draw.text((size[0] - pad - mark_w, size[1] - pad - 30),
               mark, font=mark_font, fill=SUBTLE if light else MUTED)
+
+    # The act name and the agency mark share one line, and a long name used to
+    # run straight through the mark ("FREE FALLIN: THE TOM PETTY CONCERT
+    # EXPERIENCE" over "LOVEPRODUCTIONS.COM"). Shrink to fit the space actually
+    # left, then ellipsize if even the floor is too wide.
+    name = act.upper()
+    room = size[0] - 2 * pad - mark_w - int(size[0] * 0.03)
+    base = 27 if size[0] > 1100 else 30
+    for pt in range(base, 17, -1):
+        act_font = _font("bold", pt)
+        if _text_width(draw, name, act_font) <= room:
+            break
+    else:
+        act_font = _font("bold", 18)
+        while name and _text_width(draw, name + "...", act_font) > room:
+            name = name[:-1].rstrip()
+        name += "..."
+    draw.text((pad, size[1] - pad - 34), name, font=act_font,
+              fill=BODY if light else PAPER)
     return img
 
 

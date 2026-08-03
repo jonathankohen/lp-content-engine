@@ -283,6 +283,16 @@ _ARTWORK_RE = re.compile(
     re.I,
 )
 
+# A tour/season year in the FILENAME (not the WordPress upload path, which is
+# always /YYYY/MM/) means the file is a dated admat rather than a photo of the
+# act. "Free-Fallin-American-Girl-2026-750x525.png" is a circular tour graphic
+# carrying its own "AMERICAN GIRL TOUR 2026" type, which fights whatever the
+# card puts over it, and it dates the post. It scored top on 2026-08-03 because
+# it matched the act name and no artwork keyword appeared in it.
+_DATED_ART_RE = re.compile(r"(?:^|[_\-])(?:19|20)\d{2}(?:[_\-.]|$)")
+# Same idea by word: a file that names a tour is promotional artwork.
+_TOUR_ART_RE = re.compile(r"(?:^|[_\-])(?:tour|admat|onsale|on[_\-]sale)(?:[_\-.\d]|$)", re.I)
+
 
 def fetch_act_photo(url: str, act: str = "") -> str | None:
     """Return the best photo on an act's own page to sit behind card type, or None.
@@ -325,11 +335,19 @@ def fetch_act_photo(url: str, act: str = "") -> str | None:
         name = absolute.rsplit("/", 1)[-1].lower()
         width = int(m.group(1)) if (m := _IMG_WIDTH_RE.search(tag)) else 0
 
+        # The size suffix WordPress appends ("-750x525") is not part of the
+        # name, and its digits would otherwise read as a year.
+        stem = re.sub(r"-\d{2,4}x\d{2,4}(?=\.|$)", "", name)
+
         score = 0
-        if tokens and sum(t in name for t in tokens) >= max(1, len(tokens) // 2):
+        if tokens and sum(t in stem for t in tokens) >= max(1, len(tokens) // 2):
             score += 2
-        if _ARTWORK_RE.search(name):
+        if _ARTWORK_RE.search(stem):
             score -= 2
+        # Penalised harder than generic artwork: a dated admat is both busy and
+        # wrong by next season, so it should lose even to an unnamed photo.
+        if _DATED_ART_RE.search(stem) or _TOUR_ART_RE.search(stem):
+            score -= 3
         if (score, width) > ((best_score, best_width) if best else (-99, -1)):
             best, best_score, best_width = absolute, score, width
 

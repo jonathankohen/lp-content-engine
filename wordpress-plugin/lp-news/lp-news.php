@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       LP News
  * Description:        Creates standard WordPress news posts (draft) from the LP Content Engine weekly run. Each post gets a featured image, body, category, and a red "Read more" button linking to the source.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Author:            Love Productions
  * License:           GPL-2.0-or-later
  * Requires at least: 5.8
@@ -30,11 +30,18 @@ if (! defined('ABSPATH')) {
 	exit; // No direct access.
 }
 
-define('LP_NEWS_VERSION', '1.0.0');
+define('LP_NEWS_VERSION', '1.1.0');
 define('LP_NEWS_OPTION_SECRET', 'lp_news_secret');
 // ID of a post configured with the desired theme "Page settings"
 // (Header/Footer/Sidebar/Layout/etc.); its meta is copied onto every new post.
 define('LP_NEWS_OPTION_TEMPLATE', 'lp_news_template_post_id');
+
+// Ceiling on a chunk-assembled upload. The host rejects any single request body
+// over roughly 1MB (413, before PHP sees it), which is why chunking exists at
+// all; this is the separate limit on what those chunks may add up to, so a
+// misbehaving or hostile caller cannot fill the disk one piece at a time.
+// A 15-second 1080x1080 clip is about 6MB, so 64MB is generous.
+define('LP_NEWS_MAX_UPLOAD_BYTES', 64 * 1024 * 1024);
 
 /**
  * The only categories this endpoint will ever apply. Names in the payload that
@@ -108,6 +115,16 @@ add_action('rest_api_init', function () {
 			'permission_callback' => 'lp_news_rest_permission',
 		)
 	);
+
+	register_rest_route(
+		'lp-news/v1',
+		'/upload-media-chunk',
+		array(
+			'methods'             => 'POST',
+			'callback'            => 'lp_news_rest_upload_media_chunk',
+			'permission_callback' => 'lp_news_rest_permission',
+		)
+	);
 });
 
 /**
@@ -146,18 +163,11 @@ function lp_news_rest_upload_media(WP_REST_Request $request)
 	}
 	$is_video = ('mp4' === $ext);
 
-	$existing = get_posts(array(
-		'post_type'      => 'attachment',
-		'post_status'    => 'inherit',
-		'posts_per_page' => 1,
-		'fields'         => 'ids',
-		'meta_key'       => '_lp_news_media_key',
-		'meta_value'     => $key,
-	));
-	if (! empty($existing)) {
+	$existing = lp_news_media_by_key($key);
+	if ($existing) {
 		return new WP_REST_Response(array(
-			'id'      => (int) $existing[0],
-			'url'     => wp_get_attachment_url((int) $existing[0]),
+			'id'      => (int) $existing,
+			'url'     => wp_get_attachment_url((int) $existing),
 			'skipped' => true,
 		), 200);
 	}
@@ -167,6 +177,127 @@ function lp_news_rest_upload_media(WP_REST_Request $request)
 		return new WP_REST_Response(array('error' => 'content_base64 is not valid base64.'), 400);
 	}
 
+	return lp_news_store_media($key, $filename, $bytes, $is_video);
+}
+
+/**
+ * Accept a large file in pieces, because the host caps the request body.
+ *
+ * Measured on 2026-08-03: a request body over roughly 1MB is rejected with a
+ * 413 by the server in front of PHP, before any of this code runs. Base64
+ * inflates by a third, so /upload-media tops out around a 750KB file. The
+ * rendered cards fit; the 15-second act clips are 3.7 to 6.1MB and never will.
+ * Raising the server limit was not an option the client wanted, so the file
+ * comes up in pieces instead and is reassembled here.
+ *
+ * Body: { key, filename, index, total, content_base64 }. Chunks must arrive in
+ * order. The last one (index === total - 1) assembles the file and creates the
+ * attachment, returning the same shape as /upload-media; earlier ones return
+ * { received: index }.
+ */
+function lp_news_rest_upload_media_chunk(WP_REST_Request $request)
+{
+	$body = $request->get_json_params();
+	if (! is_array($body)) {
+		return new WP_REST_Response(array('error' => 'Body must be a JSON object.'), 400);
+	}
+
+	$key      = isset($body['key']) ? sanitize_text_field($body['key']) : '';
+	$filename = isset($body['filename']) ? sanitize_file_name($body['filename']) : '';
+	$b64      = isset($body['content_base64']) ? (string) $body['content_base64'] : '';
+	$index    = isset($body['index']) ? (int) $body['index'] : -1;
+	$total    = isset($body['total']) ? (int) $body['total'] : 0;
+
+	if ('' === $key || '' === $filename || '' === $b64 || $index < 0 || $total < 1) {
+		return new WP_REST_Response(array('error' => 'key, filename, index, total and content_base64 are all required.'), 400);
+	}
+	if ($index >= $total) {
+		return new WP_REST_Response(array('error' => 'index must be less than total.'), 400);
+	}
+
+	$ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+	if (! in_array($ext, array('png', 'jpg', 'jpeg', 'mp4'), true)) {
+		return new WP_REST_Response(array('error' => 'Only png, jpg and mp4 uploads are accepted.'), 400);
+	}
+	$is_video = ('mp4' === $ext);
+
+	// Answer the dedup question before the client sends 12 more chunks.
+	$existing = lp_news_media_by_key($key);
+	if ($existing) {
+		return new WP_REST_Response(array(
+			'id'      => (int) $existing,
+			'url'     => wp_get_attachment_url((int) $existing),
+			'skipped' => true,
+		), 200);
+	}
+
+	$bytes = base64_decode($b64, true);
+	if (false === $bytes || '' === $bytes) {
+		return new WP_REST_Response(array('error' => 'content_base64 is not valid base64.'), 400);
+	}
+
+	$uploads = wp_upload_dir();
+	$tmp_dir = trailingslashit($uploads['basedir']) . 'lp-news-tmp';
+	if (! wp_mkdir_p($tmp_dir)) {
+		return new WP_REST_Response(array('error' => 'Could not create the temp directory.'), 500);
+	}
+	// Hash the key: it is caller-supplied, and this is a filesystem path.
+	$part = trailingslashit($tmp_dir) . 'lp_' . md5($key) . '.part';
+
+	// A first chunk starts the file over, so an abandoned upload cannot leave
+	// bytes that a later attempt would silently prepend to.
+	if (0 === $index && file_exists($part)) {
+		@unlink($part);
+	}
+	if ($index > 0 && ! file_exists($part)) {
+		return new WP_REST_Response(array('error' => 'No upload in progress for this key; resend from index 0.'), 409);
+	}
+
+	$assembled = file_exists($part) ? (int) filesize($part) : 0;
+	if ($assembled + strlen($bytes) > LP_NEWS_MAX_UPLOAD_BYTES) {
+		@unlink($part);
+		return new WP_REST_Response(array('error' => 'Upload exceeds the maximum allowed size.'), 413);
+	}
+
+	if (false === file_put_contents($part, $bytes, FILE_APPEND | LOCK_EX)) {
+		return new WP_REST_Response(array('error' => 'Could not write the chunk.'), 500);
+	}
+
+	if ($index < $total - 1) {
+		return new WP_REST_Response(array('received' => $index, 'bytes' => $assembled + strlen($bytes)), 200);
+	}
+
+	$full = file_get_contents($part);
+	@unlink($part);
+	if (false === $full || '' === $full) {
+		return new WP_REST_Response(array('error' => 'Reassembled file was empty.'), 500);
+	}
+
+	return lp_news_store_media($key, $filename, $full, $is_video);
+}
+
+/**
+ * Attachment ID previously stored under this dedup key, or 0.
+ */
+function lp_news_media_by_key($key)
+{
+	$existing = get_posts(array(
+		'post_type'      => 'attachment',
+		'post_status'    => 'inherit',
+		'posts_per_page' => 1,
+		'fields'         => 'ids',
+		'meta_key'       => '_lp_news_media_key',
+		'meta_value'     => $key,
+	));
+	return empty($existing) ? 0 : (int) $existing[0];
+}
+
+/**
+ * Validate raw bytes and add them to the media library. Shared by both upload
+ * routes so a chunked file is checked exactly as strictly as a whole one.
+ */
+function lp_news_store_media($key, $filename, $bytes, $is_video)
+{
 	// Trust the bytes, not the caller's extension. Images can be checked
 	// directly; for mp4 the ftyp box near the head of the file is the cheap
 	// equivalent, since getimagesizefromstring says nothing about video.
