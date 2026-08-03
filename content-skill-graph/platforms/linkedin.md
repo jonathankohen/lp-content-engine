@@ -50,6 +50,13 @@ imitate is 17 words. See [Reference Posts](../voice/reference-posts.md) for both
   in the prompt. Vary the phrasing: "Booking: [link]" / "Availability: [link]" /
   "Book a time with Steve Love: [link]". If no link is supplied, use
   info@loveproductions.com instead. Never both.
+- **Then one final line linking to the act's page**, when the post is about one
+  of our acts (spotlights, tribute news, re-bookings, testimonials). Shape:
+  "More on <act> here: <act page URL>". Client direction 2026-08-03. A buyer
+  reading about an act otherwise has nowhere to go but a booking call, which is
+  a much bigger ask than "show me more".
+- So an act-led LinkedIn post carries exactly two URLs, in this order: the
+  booking link, then the act page. Never the source article's URL.
 
 ## Formats that work
 

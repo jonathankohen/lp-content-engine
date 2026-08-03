@@ -1,4 +1,3 @@
-import re
 """Static fallback map of tribute act → loveproductions.com page URL.
 
 Every act page lives under the site's ``/title-item/`` directory. The canonical
@@ -15,6 +14,8 @@ edit here is needed; add an entry here only if a new act's Airtable link is (or
 might be) missing. Keys are matched case-insensitively with surrounding
 whitespace stripped (see ``lookup_artist_url``).
 """
+
+import re
 
 # Display name (as it appears in Airtable) → verified title-item page URL.
 ARTIST_PAGE_URLS: dict[str, str] = {
@@ -71,3 +72,18 @@ def display_act(act: str) -> str:
     act = (act or "").strip()
     match = _INVERTED_RE.match(act)
     return f"{match.group(2).title()} {match.group(1)}" if match else act
+
+
+def short_act_name(act: str) -> str:
+    """The name an act is called in a sentence: "Kiss The Sky", not
+    "Kiss The Sky: A Jimi Hendrix Tribute".
+
+    Roster names carry a descriptor after a colon or a dash for the catalogue.
+    That is right in a headline and clumsy mid-sentence, which is where the
+    act-page link line puts it ("More on Kiss The Sky here: ..."). Filing order
+    is un-inverted first.
+    """
+    name = display_act(act)
+    head = re.split(r"\s*[:\-]\s+", name, 1)[0].strip()
+    # Only shorten if something usable is left; "A1A" alone would be too thin.
+    return head if len(head) >= 4 else name

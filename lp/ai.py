@@ -7,6 +7,7 @@ import anthropic
 from anthropic.types import TextBlock
 
 from . import config
+from .artist_links import display_act, lookup_artist_url, short_act_name
 from .scrape import extract_page_quotes, fetch_page_prose, verify_quote_on_page
 
 log = logging.getLogger(__name__)
@@ -649,6 +650,11 @@ def format_performance_context(top_posts: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# Hook types that are about one of our own acts, as opposed to merely mentioning
+# it. Only these carry the "More on <act> here" link, and only on LinkedIn.
+_ACT_LED_HOOKS = frozenset({"act_spotlight", "tribute_news", "rebooking", "testimonial"})
+
+
 def generate_posts(topic: dict, skill_graph: str, performance_context: str = "") -> dict | None:
     """Generate LinkedIn, Instagram, and Facebook posts for a topic."""
     if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(
@@ -661,8 +667,9 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     source_url_instruction = (
         "Include the source URL in the Facebook post only, weave it naturally "
         "into the post body (e.g. 'Full story here: <url>' or 'Read more: <url>'). "
-        "Do NOT include any raw URL in the LinkedIn or Instagram posts (LinkedIn is an "
-        "image-only post and must not contain a link).\n\n"
+        "Never put the SOURCE url in the LinkedIn or Instagram posts. LinkedIn "
+        "carries only the booking link and, on act-led posts, the act-page link; "
+        "Instagram carries no URL at all.\n\n"
     ) if url else ""
     ticket_url = topic.get("ticket_url") or ""
     ticket_line = (
@@ -713,7 +720,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         f"Vary the wording ('Booking: <link>' / 'Availability: <link>' / "
         f"'Book a time with Steve Love: <link>'). Use the link exactly as given. "
         f"Do NOT also include an email address; the link replaces it. This is the "
-        f"only URL allowed in the LinkedIn post.\n\n"
+        f"URL allowed in the LinkedIn post apart from the act-page link below.\n\n"
         if config.STEVE_CALENDAR_LINK
         else
         "End the LinkedIn post with a single short booking line using "
@@ -728,6 +735,23 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "Link in bio for more.\" Vary the wording slightly, but never put a URL or "
         "an email address in an Instagram caption: captions do not linkify, so a "
         "link is dead text, and the email is a higher bar than a DM.\n\n"
+    )
+    # A buyer reading a LinkedIn post about an act has nowhere to go to see the
+    # act itself; the calendar link books a call, which is a much bigger ask than
+    # "show me more". Client direction 2026-08-03, with the wording taken from
+    # their own rewrite. Restricted to act-led hooks, since a trivia post about
+    # Jimi Hendrix linking to our tribute page would be a non sequitur.
+    act_page_url = (topic.get("artist_url") or "").strip() or lookup_artist_url(tribute)
+    act_link_instruction = (
+        f"After the booking line, leave a BLANK LINE, then add ONE final line "
+        f"linking to the act's page, exactly in this shape:\n"
+        f"More on {short_act_name(tribute)} here: {act_page_url}\n"
+        f"Use the URL and the act's short name exactly as given. This line goes "
+        f"on LinkedIn ONLY, never Instagram (captions do not linkify) and never "
+        f"Facebook (its source link must stay the only URL there, so the native "
+        f"preview card renders).\n\n"
+        if act_page_url and topic.get("hook_type", "") in _ACT_LED_HOOKS
+        else ""
     )
     user_prompt = (
         "Generate social media content for Love Productions based on this news topic:\n\n"
@@ -754,6 +778,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "adjective and check the post still stands; if it collapses, it was fluff. "
         "If a post could describe any act, rewrite it so it could only describe this one.\n\n"
         f"{booking_cta_instruction}"
+        f"{act_link_instruction}"
         f"{instagram_cta_instruction}"
         f"{tribute_mention_instruction}"
         f"{quote_instruction}"
@@ -843,8 +868,6 @@ def _to_hashtag(name: str) -> str:
 def build_hashtags(topic: dict, limit: int = _MAX_HASHTAGS) -> list[str]:
     """Deterministic hashtag set for a topic: the act, the original artist, then
     evergreen tags for the hook type. Deduped case-insensitively."""
-    from .artist_links import display_act  # local: avoids a circular import
-
     act = (topic.get("_act") or topic.get("artist") or "").strip()
     tags, seen = [], set()
 

@@ -223,8 +223,10 @@ def edit_post_draft(
     regenerating them, which would lose the human review already done and burn
     a second pair of Claude calls.
 
-    ``EditPostInput`` requires ``id`` **and** ``schedulingType``, and the
-    per-network metadata rules from create apply here too: Facebook and
+    ``EditPostInput`` requires ``id`` **and** ``schedulingType``. Always pass
+    ``scheduled_at`` when the draft has a time you want kept: an edit that omits
+    it discards the post's schedule. The per-network metadata rules from create
+    apply here too: Facebook and
     Instagram edits are rejected without ``metadata.<network>.type``, and an
     Instagram edit needs at least one image (the LP logo placeholder is the
     fallback). Only fields that are passed are sent, so editing text alone
@@ -236,12 +238,31 @@ def edit_post_draft(
                  " (image)" if image else "")
         return True
 
-    post_input: dict = {"id": post_id, "schedulingType": "scheduled" if scheduled_at else "automatic"}
+    # saveToDraft MUST be sent on every edit. Omitting it does not "leave the
+    # post as it was": Buffer treats the edit as a non-draft update, drops the
+    # post's custom time, re-slots it into the automatic queue and, for a slot
+    # already in the past, PUBLISHES IT IMMEDIATELY. That is not hypothetical:
+    # on 2026-08-03 an edit that only meant to attach an image published three
+    # posts live across LinkedIn, Instagram and Facebook, and pushed two others
+    # from a draft into a scheduled send.
+    # SchedulingType only has 'automatic' and 'notification' (introspected
+    # 2026-08-03); "scheduled" is not a member and the mutation rejects it. The
+    # time is carried by ShareMode + dueAt, not by schedulingType, exactly as
+    # post_draft_to_buffer already does it.
+    post_input: dict = {
+        "id":             post_id,
+        "schedulingType": "automatic",
+        "saveToDraft":    True,
+    }
     if text is not None:
         post_input["text"] = text
+    # Likewise the time: an edit without dueAt silently discards the one the post
+    # already had, so callers editing a scheduled draft must pass it back.
     if scheduled_at:
         post_input["mode"] = "customScheduled"
         post_input["dueAt"] = scheduled_at.isoformat()
+    else:
+        post_input["mode"] = "addToQueue"
     if platform == "facebook":
         post_input["metadata"] = {"facebook": {"type": "post"}}
     elif platform == "instagram":
