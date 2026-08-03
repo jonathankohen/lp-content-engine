@@ -27,3 +27,7 @@ Leave the Original Artist cell blank if there's no applicable original artist.
 | Legends of Classic Rock                       | Great White, Quiet Riot, White Lion, Alice Cooper, David Lee Roth, Winger |
 | Monkee Men                                    | The Monkees                                                               |
 | Vitaly: An Evening of Wonders!                |                                                                           |
+| Back 2 Mac: A Tribute to Fleetwood Mac | Fleetwood Mac |
+| Love TKO Teddy Pendergrass | Teddy Pendergrass |
+| Always Celine | Celine Dion |
+| Platters, The | The Platters |

@@ -793,10 +793,89 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         log.error("No JSON in content generation response for '%s'", topic.get("headline"))
         return None
     try:
-        return json.loads(match.group())
+        posts = json.loads(match.group())
     except json.JSONDecodeError as exc:
         log.error("JSON parse error in content generation: %s", exc)
         return None
+
+    # Hashtags are guaranteed here rather than asked for in the prompt: the rule
+    # has been in instagram.md all along and the model honoured it on 2 of 8
+    # posts in a real run.
+    if isinstance(posts, dict) and posts.get("instagram"):
+        posts["instagram"] = ensure_hashtags(posts["instagram"], topic)
+    return posts
+
+
+# ── Instagram hashtags ────────────────────────────────────────────────────────
+
+_MIN_HASHTAGS = 3
+_MAX_HASHTAGS = 7
+_HASHTAG_RE = re.compile(r"#\w+")
+
+# Evergreen tags by hook type, appended after the act and original-artist tags.
+# Kept small and true: a wall of generic tags reads as spam and none of these
+# should claim something the post does not contain.
+_HOOK_HASHTAGS = {
+    "upcoming_show":  ["LiveMusic", "TributeBand", "ConcertNight"],
+    "tour_poster":    ["OnTour", "LiveMusic", "TributeBands", "LiveEntertainment"],
+    "act_video":      ["LiveMusic", "TributeBand", "LivePerformance"],
+    "rebooking":      ["LiveMusic", "TributeBand", "NowBooking"],
+    "testimonial":    ["LiveMusic", "TributeBand", "NowBooking"],
+    "act_spotlight":  ["LiveMusic", "TributeBand", "NowBooking"],
+    "trivia":         ["MusicHistory", "LiveMusic", "TributeBand"],
+    "historical_fact": ["MusicHistory", "LiveMusic", "TributeBand"],
+}
+_DEFAULT_HASHTAGS = ["LiveMusic", "TributeBand", "LiveEntertainment"]
+
+
+def _to_hashtag(name: str) -> str:
+    """"Arrival From Sweden" -> "#ArrivalFromSweden". Empty string if unusable."""
+    # Drop anything after a colon or dash: the tail is usually a descriptor
+    # ("...: The Music of ABBA") that makes an unreadable tag on its own.
+    head = re.split(r"[:\-]", name or "", 1)[0]
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", head) if w]
+    if not words:
+        return ""
+    tag = "".join(w[0].upper() + w[1:] for w in words)
+    return f"#{tag}" if 2 < len(tag) <= 30 else ""
+
+
+def build_hashtags(topic: dict, limit: int = _MAX_HASHTAGS) -> list[str]:
+    """Deterministic hashtag set for a topic: the act, the original artist, then
+    evergreen tags for the hook type. Deduped case-insensitively."""
+    from .artist_links import display_act  # local: avoids a circular import
+
+    act = (topic.get("_act") or topic.get("artist") or "").strip()
+    tags, seen = [], set()
+
+    def add(tag: str) -> None:
+        if tag and tag.lower() not in seen and len(tags) < limit:
+            seen.add(tag.lower())
+            tags.append(tag)
+
+    add(_to_hashtag(display_act(act) if act else ""))
+    for original in re.split(r",|&|/| and ", topic.get("original_artist", "") or ""):
+        add(_to_hashtag(original.strip()))
+    for word in _HOOK_HASHTAGS.get(topic.get("hook_type", ""), _DEFAULT_HASHTAGS):
+        add(f"#{word}")
+    return tags
+
+
+def ensure_hashtags(text: str, topic: dict) -> str:
+    """Guarantee an Instagram caption ends with hashtags.
+
+    ``instagram.md`` has asked for 5 to 10 hashtags all along and the model
+    supplied them on 2 of 8 posts in a real run. This is the same lesson as
+    ``strip_dashes``: a rule the copy must satisfy every time belongs in code,
+    not in a prompt. Captions that already carry enough tags are returned
+    untouched, so the model's own (better, more specific) tags always win.
+    """
+    text = (text or "").rstrip()
+    if not text or len(_HASHTAG_RE.findall(text)) >= _MIN_HASHTAGS:
+        return text
+    existing = {t.lower() for t in _HASHTAG_RE.findall(text)}
+    fresh = [t for t in build_hashtags(topic) if t.lower() not in existing]
+    return f"{text}\n\n{' '.join(fresh)}" if fresh else text
 
 
 # ── Website news posts ────────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ from lp.airtable import (
 )
 from lp.ai import (
     build_act_spotlight_topic,
+    ensure_hashtags,
     build_agency_topic,
     build_page_testimonial_topics,
     classify_show_announcements,
@@ -238,7 +239,8 @@ def _post_tour_carousel(
         profile_id = buffer_profiles.get(platform, "")
         if not profile_id and not dry_run:
             continue
-        text = (f"{caption}\n\n{_IG_BOOKING_CTA}" if platform == "instagram"
+        text = (ensure_hashtags(f"{caption}\n\n{_IG_BOOKING_CTA}", {"hook_type": "tour_poster"})
+                if platform == "instagram"
                 else f"{caption}\n\nBooking: {booking}")
         if post_draft_to_buffer(
             text, profile_id, platform=platform, dry_run=dry_run,
@@ -535,7 +537,8 @@ def _draft_visual_posts(
             profile_id = buffer_profiles.get(platform, "")
             if not profile_id and not dry_run:
                 continue
-            text = (f"{topic['_text']}\n\n{_IG_BOOKING_CTA}" if platform == "instagram"
+            text = (ensure_hashtags(f"{topic['_text']}\n\n{_IG_BOOKING_CTA}", topic)
+                    if platform == "instagram"
                     else f"{topic['_text']}\n\nBooking: {booking}")
             if post_draft_to_buffer(
                 text, profile_id, platform=platform, dry_run=dry_run,
