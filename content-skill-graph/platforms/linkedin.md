@@ -14,10 +14,11 @@ answers one buyer question: why is this act, or this agency, a safe booking?
 
 ## Length: shorter than feels right
 
-**Target 200 to 300 characters of copy, not counting the booking link.**
-Hard ceiling 400.
+**Target 250 to 400 characters of copy, not counting the booking link.**
+Hard ceiling 500. (Raised from 200-300 on 2026-08-05: the client asked for
+posts "a tad bit warmer/wordier". A few more words, not a paragraph.)
 
-That is two or three sentences plus a booking line. It will feel too short. It is
+That is two to four sentences plus a booking line. It will feel too short. It is
 not. The client rejected a 130-word post as "so AI", and the post he asked us to
 imitate is 17 words. See [Reference Posts](../voice/reference-posts.md) for both.
 

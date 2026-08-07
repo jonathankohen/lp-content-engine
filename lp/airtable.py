@@ -110,7 +110,11 @@ def _fetch_calendar_records() -> list[dict]:
     """Fetch every fully-executed row from the Airtable calendar table (paginated)."""
     records: list[dict] = []
     params: dict = {
-        "fields[]": ["LPC #", "Show Title", "Show Date", "Venue Address"],
+        # "Venue" is the venue's *name*. It is populated on every fully-executed
+        # row and was simply never requested, which is why re-bookings used to
+        # fall back to the tour sheet and the contracts table and drop most
+        # pairings for having no name (2026-08-04).
+        "fields[]": ["LPC #", "Show Title", "Show Date", "Venue Address", "Venue"],
         "filterByFormula": "{LPC Contract Status}='(FE) Fully Executed'",
         "cellFormat": "string",
         "timeZone":   "America/New_York",
@@ -208,29 +212,43 @@ def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> lis
 
     The venue must be resolvable to a **name**. A post reading "8901 N Kings Hwy
     has booked them five times" is worthless, so pairings that resolve only to a
-    street address are dropped rather than posted. Names come from the tour dates
-    sheet first, then the contracts table, and only for groups that already
-    qualify (one lookup per re-booking, not one per contract row).
+    street address are dropped rather than posted.
+
+    **Grouping is by venue name, not by street address (2026-08-04).** The
+    calendar table's own ``Venue`` field carries the name on every fully-executed
+    row, so it is the primary source and the tour sheet and contracts lookups are
+    only a fallback for a blank one. Grouping on the address also split the same
+    venue across spelling variants of its address, which undercounted. The two
+    changes together took the roster from 7 named pairings to 36, and from one
+    pairing at 3+ bookings to seven.
 
     Returned dicts match the shape :func:`show_to_topic` produces, sorted
     strongest first (most bookings, then most recent).
     """
     mappings = mappings or {}
     groups: dict[tuple[str, str], dict] = defaultdict(
-        lambda: {"dates": set(), "lpc": "", "title": "", "venue_raw": ""}
+        lambda: {"dates": set(), "lpc": "", "title": "", "venue_raw": "", "venue": ""}
     )
 
     for r in _fetch_calendar_records():
         fields = r.get("fields", {})
         title = _str(fields.get("Show Title", ""))
         venue_raw = _str(fields.get("Venue Address", ""))
+        # Venue names are hand-typed and some carry a line break ("New Barn
+        # Theater\nRenfro Valley Entertainment Center"), which would land in the
+        # middle of a sentence in the post.
+        venue = re.sub(r"\s+", " ", _str(fields.get("Venue", ""))).strip()
         show_date = _parse_show_date(fields.get("Show Date", ""))
-        if not title or not venue_raw or show_date is None:
+        if not title or not (venue or venue_raw) or show_date is None:
             continue
-        g = groups[(_norm(title), _norm(venue_raw))]
+        # Group on the name when we have one so "Celebrity Theatre" is one venue
+        # however its address was typed that week; fall back to the address only
+        # for rows with no name at all.
+        g = groups[(_norm(title), _norm(venue or venue_raw))]
         g["dates"].add(show_date)
         g["title"] = title
-        g["venue_raw"] = venue_raw
+        g["venue"] = g["venue"] or venue
+        g["venue_raw"] = g["venue_raw"] or venue_raw
         # Keep any LPC number from the group; used only to look up the venue name.
         g["lpc"] = g["lpc"] or _str(fields.get("LPC #", ""))
 
@@ -244,7 +262,8 @@ def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> lis
         title = g["title"]
         dates = sorted(g["dates"])
         venue = (
-            lookup_venue_name(title, [d.strftime("%Y-%m-%d") for d in dates])
+            g["venue"]
+            or lookup_venue_name(title, [d.strftime("%Y-%m-%d") for d in dates])
             or fetch_venue_from_contracts(g["lpc"])
         )
         if not venue:
@@ -263,10 +282,13 @@ def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> lis
             "headline":        f"{venue} has booked {title} {count} times ({span})",
             "url":             "",
             "sheet_key":       f"rebook_{_slug(title)}_{_slug(venue)}",
+            # No interpretive sentence here. It used to end "a venue bringing an
+            # act back is proof the act draws and delivers", which is the model
+            # being handed the exact explain-their-own-business line the client
+            # rejected (2026-08-03). The facts are the post.
             "summary": (
                 f"{venue} has booked {title} {count} separate times between {span}. "
-                f"Confirmed dates: {date_list}. A venue bringing an act back is proof "
-                f"the act draws and delivers."
+                f"Confirmed dates: {date_list}."
             ),
             "hook_type":       "rebooking",
             "ticket_url":      None,
@@ -303,4 +325,8 @@ def show_to_topic(show: dict, mappings: dict) -> dict:
         "summary":         f"{title} is performing at {venue} on {date_formatted}. Confirmed booking.",
         "hook_type":       "upcoming_show",
         "ticket_url":      None,
+        # Carried as its own field so lookup_venue_handle() can tag the venue on
+        # Instagram. Often a resolved venue name by this point, sometimes still a
+        # street address, in which case the lookup simply misses.
+        "venue":           venue,
     }

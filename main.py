@@ -36,6 +36,8 @@ from lp.airtable import (
 from lp.ai import (
     build_act_spotlight_topic,
     ensure_hashtags,
+    ensure_mentions,
+    is_music_act,
     build_agency_topic,
     build_page_testimonial_topics,
     classify_show_announcements,
@@ -68,7 +70,7 @@ from lp.feeds import load_feed_items, search_artist_feeds
 from lp.loaders import load_artist_mappings, load_skill_graph
 from lp.artist_links import display_act, lookup_artist_url
 from lp.cards import key_art_for, render_quote_card, render_stat_card, render_tour_poster
-from lp.scrape import fetch_act_photo, fetch_og_image
+from lp.scrape import fetch_act_photo, fetch_og_image, fetch_page_prose
 from lp.sheets import (
     collapse_residencies,
     lookup_ticket_url,
@@ -125,26 +127,74 @@ def _image_for(
 
 
 # Instagram captions do not linkify, so a booking URL there is dead text and an
-# email is a higher bar than a DM. Client direction 2026-08-03: Instagram always
-# ends with a DM ask plus link in bio. The same shape is specified to the model
-# in generate_posts() and in platforms/instagram.md, so generated and hardcoded
-# captions match.
-_IG_BOOKING_CTA = "DM us for booking availability. Link in bio for more."
+# email is a higher bar than the bio link. Client direction 2026-08-04: Instagram
+# always ends with this one line (it replaced the DM ask of 2026-08-03). The same
+# line is specified to the model in generate_posts() and in
+# platforms/instagram.md, so generated and hardcoded captions match.
+_IG_BOOKING_CTA = "Link in bio to set up an appointment for booking."
+# The booking ask on Facebook and LinkedIn visual posts, in the client's own
+# words (2026-08-05). It replaced a bare "Booking: <url>", which asked nothing
+# and read like a field label. The URL follows on the same line.
+_BOOKING_ASK = "Interested in booking a show? Set up an appointment with Steve Love:"
+
+
+# Cruise contracts (client direction 2026-08-04: take Kyle Martin's Piano Man off
+# the carousel "now, and in the future, he's just doing cruises"). A buyer cannot
+# book a date on the Celebrity Edge, and "CocoCay, Bahamas" on a poster of dates
+# on sale is not a date anyone reading it can act on.
+#
+# Matched on the venue and city rather than kept as a list of act names, because
+# the rule is about the booking and not about the performer: the act comes back
+# on its own the week it plays four theatres. Two families, both taken from the
+# real sheet rows:
+#   - the ship itself ("Celebrity Edge", "Ruby Princess", "Caribbean Princess")
+#   - a port of call, where the venue is the port ("CocoCay", "Costa Maya",
+#     "Charlotte Amalie", "Roatan"), which is what a whole cruise itinerary looks
+#     like in the sheet
+_CRUISE_LINE_RE = re.compile(
+    r"\b(celebrity|carnival|norwegian|cunard|seabourn|silversea|azamara|oceania"
+    r"|windstar|regent|viking|virgin voyages|holland america|royal caribbean|msc)\s+\w",
+    re.I,
+)
+_CRUISE_SHIP_RE = re.compile(r"\w\s+(princess|of the seas|cruise|cruises|ship)\b", re.I)
+_CRUISE_PORT_RE = re.compile(
+    r"\b(cococay|costa maya|cozumel|roatan|basseterre|philipsburg|charlotte amalie"
+    r"|port canaveral|labadee|half moon cay|ocho rios|falmouth|grand turk"
+    r"|at sea|sea day)\b",
+    re.I,
+)
+
+
+def _is_cruise_date(d: dict) -> bool:
+    """True if this row is a cruise-ship booking rather than a bookable venue."""
+    where = f"{d.get('venue', '')} {d.get('city', '')}"
+    return bool(
+        _CRUISE_LINE_RE.search(where)
+        or _CRUISE_SHIP_RE.search(where)
+        or _CRUISE_PORT_RE.search(where)
+    )
 
 
 def _tour_carousel_slides(
     artists: list[dict],
     *,
     max_slides: int = 8,
-    min_dates: int = 3,
+    min_dates: int | None = None,
 ) -> tuple[list[str], list[str]]:
     """Render one tour-date poster per touring act. Returns (paths, act names).
 
     Shared by ``--tour-carousel`` and the weekly visual floor, so both produce
     the same "look at all these acts on tour" post rather than the floor
     drafting a separate post per act (client direction 2026-08-03).
+
+    Acts are taken **fullest first**, not in roster order (2026-08-04). There are
+    more qualifying acts than slides, so roster order handed a slot to an act
+    with four dates while an act with fourteen missed the carousel entirely.
     """
-    slides, acts_used = [], []
+    min_dates = config.TOUR_CAROUSEL_MIN_ACT_DATES if min_dates is None else min_dates
+
+    # Gather first, render second: the fullest slides win the limited slots.
+    eligible: list[tuple[str, list]] = []
     for artist in artists:
         name = (artist.get("name") or "").strip()
         if not name:
@@ -152,7 +202,17 @@ def _tour_carousel_slides(
         # Collapse residencies first: a week at one venue is one line on the
         # poster, not seven, so the other cities still get a row.
         dates = collapse_residencies(upcoming_tour_dates(name))
-        # An act with one or two dates does not read as "on tour", and a thin
+        # Then drop the cruise dates. An act left under the minimum by this is an
+        # act that is "just doing cruises", so it falls off the carousel through
+        # the ordinary date floor rather than through a list of names.
+        land = [d for d in dates if not _is_cruise_date(d)]
+        if len(land) < len(dates):
+            log.info(
+                "Tour carousel: %s, dropped %d cruise date(s), %d left",
+                name, len(dates) - len(land), len(land),
+            )
+        dates = land
+        # An act with a handful of dates does not read as "on tour", and a thin
         # slide undercuts the whole point of the format.
         if len(dates) < min_dates:
             continue
@@ -170,6 +230,12 @@ def _tour_carousel_slides(
         if len(places) < 2:
             log.info("Tour carousel: skipping %s, all dates at one location", name)
             continue
+        eligible.append((name, dates))
+
+    eligible.sort(key=lambda pair: len(pair[1]), reverse=True)
+
+    slides, acts_used, n_dates = [], [], 0
+    for name, dates in eligible:
         # Official key art beats a scraped hero shot, so the photo is fetched
         # only for the acts that have no key-art file on disk.
         art = key_art_for(name)
@@ -185,9 +251,10 @@ def _tour_carousel_slides(
         if path:
             slides.append(path)
             acts_used.append(name)
+            n_dates += len(dates)
         if len(slides) >= max_slides:
             break
-    return slides, acts_used
+    return slides, acts_used, n_dates
 
 
 def _verify_dates(artists: list[dict], max_rows: int = 8) -> None:
@@ -364,10 +431,24 @@ def _tour_carousel_topic(artists: list[dict], *, period: str) -> dict | None:
     Week-stamped so it fires once a week at most: the slide contents change as
     dates move, so it is worth repeating, just not twice in one week.
     """
-    slides, acts = _tour_carousel_slides(artists)
+    slides, acts, n_dates = _tour_carousel_slides(artists)
     if not slides:
         return None
-    log.info("Tour carousel: %d slide(s) from %s", len(slides), ", ".join(acts))
+    # Only run it when the roster actually looks busy (client direction
+    # 2026-08-04). A two-slide swipe with nine dates on it is not the post the
+    # client liked; it is a thin listing wearing the same format.
+    if len(slides) < config.TOUR_CAROUSEL_MIN_SLIDES or n_dates < config.TOUR_CAROUSEL_MIN_DATES:
+        log.info(
+            "Tour carousel: skipped, %d slide(s) / %d date(s) is under the "
+            "%d / %d floor",
+            len(slides), n_dates,
+            config.TOUR_CAROUSEL_MIN_SLIDES, config.TOUR_CAROUSEL_MIN_DATES,
+        )
+        return None
+    log.info(
+        "Tour carousel: %d slide(s), %d date(s), from %s",
+        len(slides), n_dates, ", ".join(acts),
+    )
     return {
         "hook_type":    "tour_poster",
         "headline":     f"Tours on sale now ({len(slides)} acts)",
@@ -377,7 +458,43 @@ def _tour_carousel_topic(artists: list[dict], *, period: str) -> dict | None:
         "_image_paths": slides,
         "_visual":      True,
         "_text":        "Our acts are booked and busy. Swipe to see the tours on sale now.",
+        # For the website article. There is no single act here, so generate_article
+        # takes the _acts list instead and writes the tie-in and booking CTA for
+        # the group. The summary is the real date data off the posters, so the
+        # article is written from facts rather than from the caption.
+        "_acts":        list(acts),
+        "summary":      _carousel_summary(acts),
     }
+
+
+def _carousel_summary(acts: list[str]) -> str:
+    """Per-act date facts behind the carousel, for the website article to work from.
+
+    The caption is nine words by design, so an article generated from it alone
+    would be padding. This re-reads the same dates the posters were rendered
+    from (tab rows are cached for the run, so it is not a second fetch) and
+    hands the model the acts, their date counts and the cities they are playing.
+    """
+    lines, total = [], 0
+    for name in acts:
+        dates = [d for d in collapse_residencies(upcoming_tour_dates(name))
+                 if not _is_cruise_date(d)]
+        if not dates:
+            continue
+        cities = []
+        for d in dates:
+            city = ", ".join(p for p in (d.get("city", ""), d.get("region", "")) if p)
+            if city and city not in cities:
+                cities.append(city)
+        total += len(dates)
+        lines.append(
+            f"{display_act(name)}, {len(dates)} upcoming date"
+            f"{'s' if len(dates) != 1 else ''}, including {', '.join(cities[:5])}."
+        )
+    if not lines:
+        return ""
+    return (f"{len(lines)} Love Productions acts have {total} upcoming dates on sale. "
+            + " ".join(lines))
 
 
 def _act_clip_topic(name: str, *, period: str) -> dict | None:
@@ -395,6 +512,11 @@ def _act_clip_topic(name: str, *, period: str) -> dict | None:
     path = clip_for_act(name)
     if not path:
         return None
+    # The website article needs something real to say, and the caption is six
+    # words. The act's own page copy is the same pre-cleared source act
+    # spotlights are built from, so the article is grounded in published prose
+    # rather than invented around a video.
+    artist_url = lookup_artist_url(name) or ""
     return {
         "hook_type": "act_video",
         "headline":  f"{display_act(name)} clip",
@@ -403,8 +525,22 @@ def _act_clip_topic(name: str, *, period: str) -> dict | None:
         "sheet_key": f"clip_{_slugify(name)}_{period}",
         "_video_path": path,
         "_visual":   True,
-        "_text":     f"{display_act(name)}, live.",
+        "_text":     _clip_caption(name),
+        "artist_url": artist_url,
+        "summary":   fetch_page_prose(artist_url) if artist_url else "",
     }
+
+
+def _clip_caption(name: str) -> str:
+    """The client's own caption for a clip (2026-08-05), verbatim for music acts.
+
+    "The Platters, live! The music speaks for itself." Warmer than the "<act>,
+    live." it replaces, and the second sentence is the light comment in the
+    agency's own voice that the approved re-booking post ends on, not an
+    assertion that the act is good.
+    """
+    subject = "music" if is_music_act(name) else "show"
+    return f"{display_act(name)}, live! The {subject} speaks for itself."
 
 
 def _draft_visual_posts(
@@ -417,6 +553,8 @@ def _draft_visual_posts(
     dry_run: bool,
     scheduled_topics: list[dict],
     carousel_only: bool = False,
+    skill_graph: str = "",
+    news_posts: list[dict] | None = None,
 ) -> int:
     """Draft up to ``want`` graphic-led or video-led posts. Returns how many landed.
 
@@ -477,9 +615,12 @@ def _draft_visual_posts(
             profile_id = buffer_profiles.get(platform, "")
             if not profile_id and not dry_run:
                 continue
-            text = (ensure_hashtags(f"{topic['_text']}\n\n{_IG_BOOKING_CTA}", topic)
+            text = (ensure_hashtags(
+                        ensure_mentions(f"{topic['_text']}\n\n{_IG_BOOKING_CTA}", topic),
+                        topic,
+                    )
                     if platform == "instagram"
-                    else f"{topic['_text']}\n\nBooking: {booking}")
+                    else f"{topic['_text']}\n\n{_BOOKING_ASK} {booking}")
             if post_draft_to_buffer(
                 text, profile_id, platform=platform, dry_run=dry_run,
                 scheduled_at=slot,
@@ -496,6 +637,24 @@ def _draft_visual_posts(
                 )
         if not posted:
             continue
+
+        # Visual posts get a website article like every other queued topic
+        # (client direction 2026-08-06). They used to be the one path that
+        # skipped it, purely because this function predates the website step
+        # rather than for any editorial reason.
+        #
+        # Featured image: the first hosted slide for a carousel. A clip's asset
+        # is an mp4, which cannot be a featured image, so it falls back to the
+        # act's own page photo, the same source the stat cards use.
+        if news_posts is not None and skill_graph:
+            image = "" if dry_run else (urls[0] if not is_video else "")
+            if is_video and not dry_run:
+                image = fetch_act_photo(topic.get("artist_url", ""), topic.get("_act", "")) or ""
+            if (news_post := _build_news_post(
+                topic, skill_graph, image, topic.get("artist_url", "")
+            )):
+                news_posts.append(news_post)
+
         used.add(topic_key(topic))
         scheduled_topics.append(topic)
         drafted += 1
@@ -550,12 +709,26 @@ def _build_news_post(
         appointment_url=config.STEVE_CALENDAR_LINK,
     )
     if not article:
+        # generate_article() returns None on a refusal, a bad JSON parse, or the
+        # cost cap / call limit, and this used to swallow all of it. A capped run
+        # therefore drafted social posts with no website article and reported
+        # success, which is indistinguishable from "this hook type has no
+        # article" unless you already know the rules. Say so out loud.
+        log.warning(
+            "NO website article for %s '%s' (cost cap, call limit, or generation "
+            "failure). Social posts were still drafted. Spend so far $%.2f, %d calls.",
+            topic.get("hook_type", "?"),
+            topic.get("headline", "")[:60],
+            config.estimated_cost_usd,
+            config.claude_call_count,
+        )
         return None
-    key = (
-        (topic.get("url") or "").strip()
-        or (topic.get("sheet_key") or "").strip()
-        or topic.get("headline", "").strip()
-    )
+    # Same key the Sheets dedup uses: sheet_key, then url, then headline. This
+    # used to check url FIRST, which contradicted topic_key() and broke exactly
+    # the case sheet_key exists for (found 2026-08-06): an act spotlight's url is
+    # the act's own page, so every quarterly spotlight for an act collided on one
+    # key and only the first would ever reach the website.
+    key = topic_key(topic)
     # Featured image: ONLY the source article's own image (og:image). We never
     # fall back to the artist's profile photo or the LP placeholder, if the
     # article has no image, the post is drafted imageless and handled manually.
@@ -577,10 +750,30 @@ _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
 _CTA_LABELS = r"read more|full story(?: here)?|get tickets|tickets|more here|link"
 
 
-def _first_url(text: str) -> str:
-    """First http(s) URL in text, with trailing punctuation trimmed."""
-    m = _URL_RE.search(text or "")
-    return m.group(0).rstrip(".,);]") if m else ""
+def _source_url(text: str) -> str:
+    """First URL in the text that is actually a SOURCE, i.e. not one of ours.
+
+    Every generated post now carries at least one loveproductions.com link: the
+    booking calendar on LinkedIn and Facebook, plus the act page on act-led
+    LinkedIn posts. ``_first_url`` grabbed whichever came first, so a post with
+    no source article was treated as though its source were our own booking
+    redirect. Three things went wrong at once (found 2026-08-06):
+
+    - the "Read more" button pointed at the booking calendar,
+    - the featured image was scraped from that redirect, which resolved to a
+      Google account avatar,
+    - and the dedup key became the calendar URL, so the *second* backfilled post
+      carrying that link would be silently skipped as a duplicate of the first.
+
+    A source is by definition somebody else's page, so anything on our own
+    domain is not one. The act page is still the right **button** fallback, and
+    ``_news_button_url`` supplies it from ``artist_url``.
+    """
+    for m in _URL_RE.finditer(text or ""):
+        url = m.group(0).rstrip(".,);]")
+        if "loveproductions.com" not in url.lower():
+            return url
+    return ""
 
 
 def _strip_source_urls(text: str) -> str:
@@ -664,7 +857,7 @@ def _buffer_posts_to_news(
         if is_show:
             log.info("Skipping show announcement (not website news): %.70s", text.replace("\n", " "))
             continue
-        url = _first_url(text)
+        url = _source_url(text)
         matched = _match_artist(text, artists, mappings)
         artist_url = matched.get("artist_url", "") if matched else ""
         topic = {
@@ -839,12 +1032,19 @@ def _platforms_for(hook_type: str) -> tuple[str, ...]:
 
 
 # Hook types that must never reach LinkedIn. The first three are fan content;
-# the last two announce a live date, which LinkedIn does not get at all (client
-# direction 2026-08-03: "completely eliminate any LinkedIn posts going on about
-# a show, or announcing a show"). LinkedIn is a proof channel for buyers.
+# `upcoming_show` announces a live date, which LinkedIn does not get at all
+# (client direction 2026-08-03: "completely eliminate any LinkedIn posts going on
+# about a show, or announcing a show"). LinkedIn is a proof channel for buyers.
+#
+# **`tour_poster` was on this list and came off (client direction 2026-08-04:
+# the client asked specifically for the tour carousel on LinkedIn).** It was
+# excluded on the reading that a poster of dates on sale is a show announcement
+# whatever the artwork. The client's view outranks that, and it is defensible:
+# a swipe through the whole roster's dates is the agency looking busy, which is
+# a buyer argument, where a single date at a single venue is a flyer.
 _NO_LINKEDIN_HOOKS = frozenset({
     "original_artist_news", "historical_fact", "trivia",
-    "upcoming_show", "tour_poster",
+    "upcoming_show",
 })
 
 
@@ -861,8 +1061,13 @@ def _linkedin_show_block(topic: dict, text: str) -> str:
 
     This is a hard block, not a scoring nudge. There is no acceptable rate of
     show posts on LinkedIn.
+
+    ``tour_poster`` is deliberately **not** blocked here (client direction
+    2026-08-04, see ``_NO_LINKEDIN_HOOKS``). It never reached this function
+    anyway, the visual phase routes through ``_platforms_for()`` alone, but the
+    two must agree or the next person to read them will re-block it.
     """
-    if topic.get("_is_show") or topic.get("hook_type") in ("upcoming_show", "tour_poster"):
+    if topic.get("_is_show") or topic.get("hook_type") == "upcoming_show":
         return "show topic"
     if (topic.get("ticket_url") or "").strip():
         return "carries a ticket link"
@@ -1112,12 +1317,16 @@ def main(
 
     # ── Visual-only mode (--visual-count) ─────────────────────────────────────
     # Nothing but graphics and clips: N posts, queued with no fixed schedule, no
-    # news search, no scoring, no website articles. The captions are fixed and
-    # the media is the post, so this makes no Claude calls at all and costs
-    # nothing beyond the render and the upload.
+    # news search, no scoring. The captions are fixed and the media is the post.
+    #
+    # It used to make no Claude calls at all. It now makes one per post, for the
+    # website article, since every queued topic gets one (client direction
+    # 2026-08-06) and a visual post drafted here is no different from one drafted
+    # by the weekly run.
     if visual_count is not None:
         log.info("Visual-only mode: up to %d graphic/video post(s), queued to Buffer", visual_count)
         visual_topics: list[dict] = []
+        visual_news: list[dict] = []
         _draft_visual_posts(
             artists=artists,
             want=visual_count,
@@ -1126,7 +1335,11 @@ def main(
             buffer_profiles=buffer_profiles,
             dry_run=dry_run,
             scheduled_topics=visual_topics,
+            skill_graph=skill_graph,
+            news_posts=visual_news,
         )
+        if visual_news:
+            publish_news_posts(visual_news, dry_run=dry_run)
         mark_topics_used(visual_topics, dry_run=dry_run)
         log.info("=== Run complete. Visual posts drafted: %d ===", len(visual_topics))
         return
@@ -1248,6 +1461,69 @@ def main(
     # pipeline did, including the weeks where it found nothing at all.
     scheduled_topics: list[dict] = []  # news + facts only (shows use mark_show_used)
     remaining_slots: list = list(week_slots)
+    visuals_done = False
+
+    def _run_visuals() -> None:
+        """Draft the week's graphic and video posts. Runs once per run.
+
+        Client direction 2026-08-03: "we need more images and video, can we set a
+        minimum for those types of posts a week, maybe 2?", and 2026-08-04: those
+        posts "should shoot up in priority". So this is a floor, and it runs
+        **before** the trivia and historical-fact filler rather than after it, on
+        slots reserved for it up front (``VISUAL_RESERVED_SLOTS``). It still runs
+        when the week has no slot left: the extras queue behind the schedule
+        rather than being dropped.
+
+        Two parts. The tour carousel is drafted every week in its own right, not
+        only when the floor is short (client direction 2026-08-03: "a post like
+        that is drafted once a week"); its week-stamped dedup key is what keeps it
+        to one, so a second run in the same week is a no-op. Then the floor tops
+        up whatever is still missing from the sources that need no story to
+        exist: the tour dates sheet and the agency's own Vimeo library.
+
+        Skipped in single-artist mode (a targeted run, not a week's content) and
+        in news-only mode, where the caller asked for exactly N news posts.
+        """
+        nonlocal remaining_slots, visuals_done
+        if visuals_done or single_artist or news_count is not None:
+            return
+        visuals_done = True
+
+        used_slots = _draft_visual_posts(
+            artists=artists,
+            want=1,
+            slots=remaining_slots,
+            used=used,
+            buffer_profiles=buffer_profiles,
+            dry_run=dry_run,
+            scheduled_topics=scheduled_topics,
+            carousel_only=True,
+            skill_graph=skill_graph,
+            news_posts=news_posts,
+        )
+        remaining_slots = remaining_slots[used_slots:]
+
+        if not config.VISUAL_MIN_PER_WEEK:
+            return
+        already = sum(1 for t in all_new_topics + scheduled_topics if t.get("_visual"))
+        shortfall = config.VISUAL_MIN_PER_WEEK - already
+        log.info(
+            "Visual floor: %d of %d visual post(s) so far",
+            already, config.VISUAL_MIN_PER_WEEK,
+        )
+        if shortfall > 0:
+            used_slots = _draft_visual_posts(
+                artists=artists,
+                want=shortfall,
+                slots=remaining_slots,
+                used=used,
+                buffer_profiles=buffer_profiles,
+                dry_run=dry_run,
+                scheduled_topics=scheduled_topics,
+                skill_graph=skill_graph,
+                news_posts=news_posts,
+            )
+            remaining_slots = remaining_slots[used_slots:]
 
     if not all_candidates and not show_candidates:
         log.info("No new topics found this week")
@@ -1294,6 +1570,19 @@ def main(
                     "%d ranked topic(s) are LinkedIn-eligible",
                     shortfall, linkedin_in_pool, len(week_slots),
                 )
+
+        # Hold back slots for the graphic and video posts too. Nothing in the
+        # ranked pool ever produces one (a show or a news story carries the source
+        # article's og:image, which is someone else's picture), so the shortfall is
+        # the whole reservation and it is knowable before selection. Without this
+        # the visual floor ran last and its posts queued with no scheduled time at
+        # all in a busy week.
+        if not news_count and not single_artist and config.VISUAL_RESERVED_SLOTS:
+            pool_slots = max(1, pool_slots - config.VISUAL_RESERVED_SLOTS)
+            log.info(
+                "Reserving %d slot(s) for graphic/video posts",
+                config.VISUAL_RESERVED_SLOTS,
+            )
 
         selected = _select_with_diversity(pool, pool_slots)
         n_shows_sel = sum(1 for t in selected if t.get("_is_show"))
@@ -1379,8 +1668,9 @@ def main(
                 scheduled_topics.append(topic)
 
         # Phases 4 to 9: fill any slots the ranked pool left open. Buyer-facing proof
-        # first (re-bookings, testimonials, spotlights, agency), then the Instagram and
-        # Facebook filler (trivia, historical facts) that has always been last.
+        # first (re-bookings, then the graphic and video posts, then testimonials,
+        # spotlights and agency), and the Instagram and Facebook filler (trivia,
+        # historical facts) last, as it always has been.
         remaining_slots = week_slots[len(selected):]
         if not single_artist and remaining_slots:
             artist_urls = {a["name"]: a.get("artist_url", "") for a in artists}
@@ -1404,8 +1694,9 @@ def main(
                 remaining_slots = remaining_slots[len(scheduled_topics) - before:]
 
             # Phase 4: re-bookings. A venue booking the same act again is the strongest
-            # proof we have, and it comes straight from the contracts data. Deliberately
-            # rare (client direction 2026-07-28), so at most one per run.
+            # proof we have, and it comes straight from the calendar data. Each one
+            # carries a stat card, so this is the hard-number post the client asked
+            # for more of (2026-08-04). Capped at REBOOKING_MAX_PER_RUN.
             _run_phase(
                 _fill_with_topics,
                 label="Re-booking",
@@ -1413,6 +1704,11 @@ def main(
                 artist_urls=artist_urls,
                 max_items=config.REBOOKING_MAX_PER_RUN,
             )
+
+            # Phase 4b: the graphic and video posts, ahead of everything below them
+            # (client direction 2026-08-04). They used to run dead last, which is why
+            # they ended up queued with no scheduled time in a busy week.
+            _run_visuals()
 
             # Phase 5: published testimonials. The act's own LP page is tried first,
             # since the praise quoted there is already published by the agency and needs
@@ -1472,53 +1768,7 @@ def main(
                 mappings=mappings,
             )
 
-    # ── Visual floor: a minimum number of graphic/video-led posts per week ──
-    # Client direction 2026-08-03: "we need more images and video, can we set a
-    # minimum for those types of posts a week, maybe 2?". Card-eligible material
-    # is genuinely scarce in a typical week (the 2026-07-31 dry run produced zero
-    # cards across 16 drafts), so the shortfall is made up here from the two
-    # sources that do not depend on a story existing: the tour dates sheet and
-    # the agency's own Vimeo library.
-    #
-    # This is a floor, so it runs even when the week has no slot left; the extras
-    # queue behind the schedule rather than being dropped. Skipped in
-    # single-artist mode (a targeted run, not a week's content) and in news-only
-    # mode, where the caller asked for exactly N news posts.
-    # The tour carousel runs every week in its own right, not only when the
-    # visual floor happens to be short (client direction 2026-08-03: "let's maybe
-    # have it so that a post like that is drafted once a week"). Its week-stamped
-    # dedup key is what keeps it to one, so a second run in the same week is a
-    # no-op rather than a duplicate. It counts toward the floor below.
-    if not single_artist and news_count is None:
-        used_slots = _draft_visual_posts(
-            artists=artists,
-            want=1,
-            slots=remaining_slots,
-            used=used,
-            buffer_profiles=buffer_profiles,
-            dry_run=dry_run,
-            scheduled_topics=scheduled_topics,
-            carousel_only=True,
-        )
-        remaining_slots = remaining_slots[used_slots:]
-
-    if not single_artist and news_count is None and config.VISUAL_MIN_PER_WEEK:
-        already = sum(1 for t in all_new_topics + scheduled_topics if t.get("_visual"))
-        shortfall = config.VISUAL_MIN_PER_WEEK - already
-        log.info(
-            "Visual floor: %d of %d visual post(s) so far",
-            already, config.VISUAL_MIN_PER_WEEK,
-        )
-        if shortfall > 0:
-            _draft_visual_posts(
-                artists=artists,
-                want=shortfall,
-                slots=remaining_slots,
-                used=used,
-                buffer_profiles=buffer_profiles,
-                dry_run=dry_run,
-                scheduled_topics=scheduled_topics,
-            )
+    _run_visuals()
 
     all_new_topics.extend(scheduled_topics)
     mark_topics_used(scheduled_topics, dry_run=dry_run)
@@ -1631,6 +1881,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Draft the 'tours on sale now' carousel (one tour-date slide per act) and exit",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="With --tour-carousel: draft it again even though one already went out this week",
+    )
     args = parser.parse_args()
 
     if args.test_clips:
@@ -1652,11 +1907,20 @@ if __name__ == "__main__":
         artists = fetch_airtable_artists()
         profiles = {} if args.dry_run else discover_buffer_profiles()
         drafted: list[dict] = []
+        # The carousel is week-stamped so the weekly run cannot draft two. When
+        # the slides themselves have changed (a render fix, new dates), --force
+        # is how you re-draft in the same week. Delete the superseded Buffer
+        # draft by hand, since this one has no way to know which it replaced.
+        week_used = set() if args.force else read_used_topics()
+        carousel_news: list[dict] = []
         n = _draft_visual_posts(
-            artists=artists, want=1, slots=[], used=read_used_topics(),
+            artists=artists, want=1, slots=[], used=week_used,
             buffer_profiles=profiles, dry_run=args.dry_run,
             scheduled_topics=drafted, carousel_only=True,
+            skill_graph=load_skill_graph(), news_posts=carousel_news,
         )
+        if carousel_news:
+            publish_news_posts(carousel_news, dry_run=args.dry_run)
         # Record it, so the weekly phase in main() does not draft a second one
         # in the same week.
         mark_topics_used(drafted, dry_run=args.dry_run)

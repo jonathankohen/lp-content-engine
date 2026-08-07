@@ -604,14 +604,27 @@ def render_tour_poster(
         A run of nights at one venue prints as "SEP 08-14" rather than seven
         identical rows, which is how a real tour admat handles it and which
         stops one residency hiding every other city on the poster.
+
+        **The year goes after the whole range, never after the start date**
+        (client, 2026-08-04). Formatting the start with ``fmt`` and then
+        appending the tail produced "AUG 28 '26-29" and "FEB 24 '27-28", which
+        read as spans of years rather than of nights.
         """
-        start = row["date"].strftime(fmt).upper()
-        end = row.get("date_end")
+        start, end = row["date"], row.get("date_end")
         if not end:
-            return start
-        # Same month: "SEP 08-14". Across months: "SEP 28-OCT 04".
-        tail = end.strftime("%d" if end.month == row["date"].month else fmt).upper()
-        return f"{start}-{tail}"
+            return start.strftime(fmt).upper()
+
+        # A range that crosses a year boundary is the one case needing both
+        # years: "DEC 30 '26-JAN 02 '27".
+        if multiyear and end.year != start.year:
+            return f"{start.strftime(fmt).upper()}-{end.strftime(fmt).upper()}"
+
+        # Same month: "SEP 08-14". Across months: "SEP 28-OCT 04". Then one year
+        # on the end, and only when the poster needs years at all.
+        head = start.strftime("%b %d").upper()
+        tail = end.strftime("%d" if end.month == start.month else "%b %d").upper()
+        span = f"{head}-{tail}"
+        return f"{span} '{start.strftime('%y')}" if multiyear else span
 
     date_strs = [_date_str(d) for d in drawn]
     date_col = max(_text_width(draw, s, row_font) for s in date_strs) + int(dims[0] * 0.030)

@@ -6,9 +6,9 @@ AI writing patterns to strip from every post regardless of platform.
 
 ## LinkedIn
 
-- Most professional version of the voice, and by far the shortest. Target 200 to
-  300 characters of copy (the booking link does not count toward it), two or
-  three sentences plus that booking line. See
+- Most professional version of the voice, and by far the shortest. Target 250 to
+  400 characters of copy (the booking link does not count toward it), two to
+  four sentences plus that booking line. See
   [LinkedIn](../platforms/linkedin.md) and [Reference Posts](reference-posts.md).
 - Buyer-first framing, write for talent buyers, bookers, and industry peers, but never use the word "buyer" or "talent buyer" in the post itself. Address them as "you", or use neutral phrases like "those unfamiliar with the act" or "anyone who hasn't seen them live." They know who they are.
 - Lead with the result: a sold-out run, an award, a re-booking, a press win. State the specific proof, then make the ask. One fact, not a stack of them.
@@ -26,13 +26,14 @@ AI writing patterns to strip from every post regardless of platform.
 - Shorter captions. Bold, punchy, energetic.
 - Aspirational and inviting, "you need to be there," "tickets going fast."
 - Carousel captions: one bold idea per slide. Max 8 words on slide 1.
-- Hashtags: 5-10 at the end. Use genre, artist, and location tags.
-- **The CTA is always a DM ask plus link in bio, never a URL and never an email**
-  (client direction 2026-08-03). Captions do not linkify, so a URL is dead text,
-  and an email is a higher bar than a DM. See
-  [Instagram](../platforms/instagram.md).
+- Hashtags: **at most 5** at the end, a hard Buffer limit. Act and artist tags
+  first, then location. See [Instagram](../platforms/instagram.md).
+- **The CTA is always the fixed line "Link in bio to set up an appointment for
+  booking.", never a URL and never an email** (client direction 2026-08-04).
+  Captions do not linkify, so a URL is dead text, and an email is a higher bar
+  than tapping the bio link. See [Instagram](../platforms/instagram.md).
 - Example: "Sold out. Again. 🎸 The Dolly Show returns this fall.
-  DM us for booking availability. Link in bio for more."
+  Link in bio to set up an appointment for booking."
 
 ## Facebook
 

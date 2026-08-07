@@ -41,12 +41,82 @@ _PROMO_RE = re.compile(r"\b(promo|trailer|demo|sizzle|reel|highlights?)\b", re.I
 _MIN_DURATION = 60
 _MAX_DURATION = 900
 
+_CLIP_SECONDS = 15.0
+
+# Per-act clip length, for the acts where the default lands mid-word. There is
+# nothing to snap a cut to on these reels: silencedetect finds no pause anywhere
+# near the cut point, because backing music runs under the vocal. So the only
+# lever is length, and it is set per act rather than globally, since a longer
+# clip everywhere costs size on every act to fix one. Matched like the artists.md
+# mappings are, so "The Platters" and "Platters, The" both hit.
+_ACT_CLIP_SECONDS = {
+    # Ended on "preten-" at 15s (client, 2026-08-05).
+    "platters, the": 18.0,
+}
+
+
+def _clip_seconds(act: str) -> float:
+    """Clip length for ``act``, falling back to the default."""
+    key = re.sub(r"\s+", " ", (act or "").strip().lower())
+    if key in _ACT_CLIP_SECONDS:
+        return _ACT_CLIP_SECONDS[key]
+    # "Platters, The" and "The Platters" are the same act.
+    if key.startswith("the "):
+        alt = f"{key[4:]}, the"
+    elif key.endswith(", the"):
+        alt = f"the {key[:-5]}"
+    else:
+        alt = key
+    return _ACT_CLIP_SECONDS.get(alt, _CLIP_SECONDS)
+
 # Cuts made to advertise one booking carry a burned-in date and venue. Reposting
 # those advertises a show that has already happened, so they are skipped in
 # favour of the evergreen reel. Matched against the video title.
 _DATED_AD_RE = re.compile(
     r"\b(on sale|tickets?|presale|tonight|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec"
-    r"|20\d\d\s*(show|date|night)|shout[- ]?out|apap|iaapa|ieba)\b",
+    r"|20\d\d\s*(show|date|night)|shout[- ]?out|apap|iaapa|ieba)\b"
+    # A numeric date in the title means a capture of one specific night, which is
+    # both stale and nearly always the raw recording rather than a cut edit:
+    # "Vandenberg 'Burning Heart' live 2/27/25 (15) Hartford". The odd slash is a
+    # fullwidth solidus, since Vimeo rewrites "/" in titles.
+    r"|\b\d{1,2}\s*[/⧸⁄-]\s*\d{1,2}\s*[/⧸⁄-]\s*\d{2,4}\b",
+    re.I,
+)
+
+# ── Amateur footage (client direction 2026-08-04: no low-quality live clips) ──
+# The library holds plenty of phone footage shot from a seat, and it went out
+# looking like phone footage shot from a seat. None of the following is a
+# judgement about the performance; they are all properties of the file, which is
+# the only thing that can be checked without a human watching it.
+#
+# Thresholds picked off a survey of the whole roster's candidates (2026-08-04),
+# with the actual videos each one catches named below.
+
+# A phone held upright. "NPSO Tony Danza - 9 of 269" is 720x1280, and there are
+# six more like it from the same night. Square counts too: a 1080x1080 crop of a
+# venue's own social post is not agency footage.
+_MIN_ASPECT = 1.5
+
+# The source upload's own height. "Arrival from Sweden Live Show Clip 1" and
+# "Arrival From Sweden @ The Wilbur 7-10-25" are 848x480, which is what a phone
+# clip looks like after it has been mailed around a few times.
+_MIN_SOURCE_HEIGHT = 720
+
+# Bitrate of the master, in Mbps. Catches the ones that carry a big frame size
+# but no detail in it: "Highlights from Tony Danza's hit live show" is 1920x1080
+# at 1.1Mbps, an upscale of something much smaller. Only the source rendition is
+# measured, since Vimeo's transcodes all sit at its own fixed rates and say
+# nothing about the original.
+_MIN_SOURCE_MBPS = 3.0
+
+# Videos that announce what they are. "Tony Danza Iphone Clip" passes every
+# numeric test above (1080p, 17.8Mbps) and is still exactly what the client asked
+# us to stop posting. "N of 269" is the giveaway of a bulk dump off someone's
+# camera roll rather than a delivered edit.
+_AMATEUR_RE = re.compile(
+    r"(\biphone\b|\bipad\b|\bphone\b|\bcell\b|\bhandheld\b|\bgopro\b|shot on"
+    r"|\baudience\b|\bfan cam\b|\bfootage\b|\braw\b|\bunedited\b"
+    r"|\b\d+\s+of\s+\d{2,}\b)",
     re.I,
 )
 
@@ -78,6 +148,38 @@ def _names_act(title: str, act: str) -> bool:
     return sum(t in low for t in tokens) >= max(1, (len(tokens) + 1) // 2)
 
 
+def _quality_issue(video: dict) -> str | None:
+    """Why this video is not broadcast-quality, or None if nothing is wrong.
+
+    Client direction 2026-08-04: do not post low-quality live clips, the sort
+    shot on a phone from the audience. **This cannot be fully automated**, since
+    the thing that makes a clip look cheap is mostly what a human sees in it, so
+    this only rules out what the file itself gives away. Anything that clears
+    these tests still deserves a look through ``--test-clips`` before it posts.
+    """
+    name = video.get("name", "") or ""
+    if _AMATEUR_RE.search(name):
+        return "title reads as amateur footage"
+
+    w, h = video.get("width") or 0, video.get("height") or 0
+    if w and h and (w / h) < _MIN_ASPECT:
+        return f"vertical or square source ({w}x{h})"
+    if h and h < _MIN_SOURCE_HEIGHT:
+        return f"source is only {h}p"
+
+    source = next(
+        (f for f in (video.get("download") or [])
+         if (f.get("quality") or "").lower() == "source"),
+        None,
+    )
+    duration = video.get("duration") or 0
+    if source and duration and source.get("size"):
+        mbps = source["size"] * 8 / duration / 1e6
+        if mbps < _MIN_SOURCE_MBPS:
+            return f"source bitrate {mbps:.1f}Mbps"
+    return None
+
+
 def _title_year(title: str) -> int:
     """A 4-digit year in the title, or 0. Used to prefer the newest promo."""
     years = [int(y) for y in re.findall(r"\b(20\d{2})\b", title or "")]
@@ -105,7 +207,12 @@ def find_act_video(act: str) -> dict | None:
             params={
                 "query": query,
                 "per_page": 25,
-                "fields": "name,duration,link,download",
+                # width/height are the source upload's own dimensions, which is
+                # what _quality_issue() judges. The renditions cannot stand in
+                # for them: Vimeo transcodes a 480p phone clip up to 720 and 1080
+                # renditions, so the download list looks identical to a real
+                # promo's.
+                "fields": "name,duration,link,width,height,download",
             },
             timeout=_TIMEOUT,
         )
@@ -141,6 +248,25 @@ def find_act_video(act: str) -> dict | None:
         )
         return None
 
+    # Drop the phone-shot live clips (client direction 2026-08-04). Fails closed
+    # in the same way the wrong-act check does: no clip beats a bad-looking clip,
+    # since the point of posting video at all is to look like an agency that
+    # books theatres.
+    quality = []
+    for v in named:
+        if (issue := _quality_issue(v)):
+            log.info("  skipping '%s' for %s: %s", v.get("name", "")[:50], act, issue)
+        else:
+            quality.append(v)
+    if not quality:
+        log.info(
+            "No broadcast-quality Vimeo video for %s (%d titled hit(s) all failed "
+            "the quality check), skipping",
+            act, len(named),
+        )
+        return None
+    named = quality
+
     # Promo first; among promos (and among non-promos) prefer the shorter cut,
     # which is nearly always the tighter, more recent edit.
     #
@@ -151,6 +277,7 @@ def find_act_video(act: str) -> dict | None:
     named.sort(key=lambda v: (
         -_title_year(v.get("name", "")),
         not _PROMO_RE.search(v.get("name", "")),
+        -(v.get("height") or 0),  # a 1080 master beats a 720 one of the same cut
         v.get("duration", 0),
     ))
     best = named[0]
@@ -217,7 +344,7 @@ def make_clip(
     dest: str,
     *,
     start: float = 0.0,
-    duration: float = 15.0,
+    duration: float = _CLIP_SECONDS,
     square: bool = True,
 ) -> str | None:
     """Cut a short, social-ready clip from ``src`` with ffmpeg.
@@ -272,7 +399,7 @@ def make_clip(
     return dest
 
 
-def clip_for_act(act: str, *, duration: float = 15.0, skip_intro: float = 10.0) -> str | None:
+def clip_for_act(act: str, *, duration: float | None = None, skip_intro: float = 10.0) -> str | None:
     """Find and cut one clip for an act. Returns the mp4 path or None.
 
     The rendition URL is handed straight to ffmpeg rather than downloaded first.
@@ -281,8 +408,11 @@ def clip_for_act(act: str, *, duration: float = 15.0, skip_intro: float = 10.0) 
     for the rare case where a source really is needed on disk.
 
     ``skip_intro`` trims the opening seconds, which on a promo reel are usually
-    a title card or a fade rather than the performance.
+    a title card or a fade rather than the performance. ``duration`` defaults to
+    the act's own length from ``_ACT_CLIP_SECONDS``, then to ``_CLIP_SECONDS``.
     """
+    if duration is None:
+        duration = _clip_seconds(act)
     video = find_act_video(act)
     if not video:
         return None

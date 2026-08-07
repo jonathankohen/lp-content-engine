@@ -2,10 +2,10 @@
 
 ## Show Announcement
 
-- Platforms: LinkedIn, Instagram, Facebook
+- Platforms: Instagram, Facebook
 - When: 2-3 weeks before a show, 1 week out, day before/day of
 - Structure: Hook (act + date + venue) → hype → ticket link / booking CTA
-- LinkedIn angle: results and credibility. Instagram: visual urgency. Facebook: event post.
+- Instagram: visual urgency. Facebook: event post.
 - Data provided: act name, venue address, confirmed date. Use the city/venue name naturally
   in the post. Do not paste a full street address. Create urgency around the specific date.
 
@@ -14,21 +14,14 @@
 - Platforms: Instagram (photos/carousel), Facebook (discussion), LinkedIn (results)
 - When: Within 24-48 hours of a show
 - Structure: Best crowd/stage photo → summary of the night → patron reaction or quote → CTA
-- Facebook version ends with a question: "Were you there? What was your favorite song?"
-
-## Artist Spotlight
-
-- Platforms: LinkedIn, Instagram, Facebook
-- When: Before a new act debuts, or to re-introduce an act to a new audience
-- Structure: Who they are → what makes them special → where to see them live → booking info
-- LinkedIn angle: what makes this act a reliable booking. Instagram: the visual identity.
+- LinkedIn version: includes hard numbers, preferably with a graphic displaying them.
 
 ## Milestone / Achievement Post
 
 - Platforms: LinkedIn (primary), Instagram, Facebook
 - When: Sold-out show, award, press mention, notable re-booking, anniversary
 - Structure: The result (lead with the headline) → context → what it means for buyers or fans
-- These are the most powerful buyer-facing posts. Always include specifics.
+- These are the most powerful buyer-facing posts. Always include specific facts and hard numbers.
 
 ## Original Artist News
 
@@ -45,7 +38,7 @@
 - Structure: The count and the venue → what it says about the act → availability
 - Lead with the number. "Third time at the Ridgefield Playhouse" is the post.
 - Never becomes a ticket pitch. This is track record, not an invitation.
-- Deliberately rare. Once per run at most.
+- Deliberately rare. Twice per run at most.
 
 ## Testimonial
 
@@ -56,14 +49,15 @@
   anything inside the quotation marks.
 - An unattributed rave is worthless. Name the venue or the outlet.
 
-## Act Spotlight
+## Artist Spotlight
 
 - Platforms: LinkedIn, Instagram, Facebook
-- When: evergreen, to introduce an act to buyers who have not booked them.
-  One per act per quarter.
-- Structure: Strongest credential → what they bring to a room → booking CTA
+- When: Before a new act debuts, or to re-introduce an act to a new audience. One per act per quarter.
+- Structure: Who they are → what makes them special → where to see them live → booking info
 - Built only from what the act's own page states. No invented credits.
 - Fails if the post could describe any tribute act.
+- LinkedIn angle: what makes this act a reliable booking. Use hard numbers, preferably with a graphic displaying them.
+- Instagram: the visual identity.
 
 ## Agency Credibility
 

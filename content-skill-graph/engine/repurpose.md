@@ -14,7 +14,7 @@ ensures the core result and credibility are clear before you adapt for fans.
 
 - Frame it for buyers: sold-out results, re-bookings, awards, press, milestones.
   Not upcoming shows or ticket dates, those are Instagram and Facebook only.
-- Output: short professional post, 200-300 characters of copy, two or three
+- Output: short professional post, 250-400 characters of copy, two to four
   sentences. Not a paragraph.
 - End with a one-line booking CTA pointing at Steve's calendar link.
 - Note: for show/date topics and original-artist topics, LinkedIn is skipped
@@ -30,8 +30,8 @@ this show."
 - LinkedIn says: "The Dolly Show sold out three consecutive runs this season,
   with patron satisfaction reviews averaging 4.9/5."
 - Instagram says: "SOLD OUT. Again. 🎸 The Dolly Show is back this fall, 
-  and tickets will go fast. Link in bio."
-- Output: Image or carousel post + caption with hashtags and ticket link CTA.
+  and tickets will go fast. Link in bio to set up an appointment for booking."
+- Output: Image or carousel post + caption with hashtags and the fixed booking CTA.
 
 ### Step 3: [Facebook](../platforms/facebook.md) (Community, Conversation)
 

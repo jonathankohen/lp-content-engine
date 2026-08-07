@@ -16,7 +16,7 @@ The client rejected our output in July 2026 as sounding machine-written. These
 came out of that. When a rule below conflicts with anything else in this graph,
 these win.
 
-1. **Short.** LinkedIn posts are 200 to 300 characters. Instagram and Facebook
+1. **Short.** LinkedIn posts are 250 to 400 characters. Instagram and Facebook
    captions are shorter than feels natural. Length is the single loudest signal
    that a machine wrote something.
 2. **One hard fact, up front.** A number, a venue, an award, a count, a year.
@@ -38,7 +38,7 @@ task.
 ### Platforms
 
 - [LinkedIn](platforms/linkedin.md): The credibility channel, buyers only.
-  200-300 characters. Proof, never show announcements.
+  250-400 characters. Proof, never show announcements.
 - [Instagram](platforms/instagram.md): Visual-first. Single images and
   multi-slide carousels. Short captions. Fans and buyers both.
 - [Facebook](platforms/facebook.md): Community-focused, warmest register.

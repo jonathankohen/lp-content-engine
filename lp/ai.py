@@ -9,6 +9,7 @@ from anthropic.types import TextBlock
 from . import config
 from .artist_links import display_act, lookup_artist_url, short_act_name
 from .scrape import extract_page_quotes, fetch_page_prose, verify_quote_on_page
+from .social_handles import mentions_for_topic
 
 log = logging.getLogger(__name__)
 
@@ -655,6 +656,24 @@ def format_performance_context(top_posts: list[dict]) -> str:
 _ACT_LED_HOOKS = frozenset({"act_spotlight", "tribute_news", "rebooking", "testimonial"})
 
 
+# Roster acts whose show is not primarily music: two illusionists, an escape
+# artist and a dance company. Calling their work "music" is the same kind of
+# factual slip as calling Priscilla Presley a tribute act, and it shows up in
+# hashtags as readily as in copy. Listed by exception because everything else on
+# the roster is a band or a singer.
+_NON_MUSIC_ACTS = frozenset({
+    "reza",
+    "michael griffin escapes",
+    "vitaly: an evening of wonders!",
+    "calpulli mex dance co.",
+})
+
+
+def is_music_act(act: str) -> bool:
+    """False for the handful of variety and dance acts. See _NON_MUSIC_ACTS."""
+    return re.sub(r"\s+", " ", (act or "")).strip().lower() not in _NON_MUSIC_ACTS
+
+
 def is_tribute_act(act: str, original_artist: str) -> bool:
     """False when the act IS the artist, rather than a tribute to one.
 
@@ -779,14 +798,26 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "after it.\n\n"
     )
     # Instagram cannot linkify a caption, so a URL there is dead text and an
-    # email address asks for more effort than a DM. Client direction 2026-08-03:
-    # keep Instagram to DM plus link in bio, nothing else.
+    # email address asks for more effort than the bio link. Client direction
+    # 2026-08-04: one fixed line, pointing at the bio link. This replaced the
+    # earlier DM ask (2026-08-03).
     instagram_cta_instruction = (
-        "End the Instagram caption with a booking CTA of exactly this shape: "
-        "a DM ask, then link in bio. For example \"DM us for booking availability. "
-        "Link in bio for more.\" Vary the wording slightly, but never put a URL or "
-        "an email address in an Instagram caption: captions do not linkify, so a "
-        "link is dead text, and the email is a higher bar than a DM.\n\n"
+        "End the Instagram caption with exactly this booking CTA, word for word: "
+        "\"Link in bio to set up an appointment for booking.\" Do not reword it, "
+        "and never put a URL or an email address in an Instagram caption: "
+        "captions do not linkify, so a link is dead text.\n\n"
+    )
+    # Handles are supplied rather than described: the model cannot invent an
+    # account it was never given, and a guessed handle tags a stranger. Code
+    # appends anything the model leaves out (ensure_mentions), so this only has
+    # to earn the better outcome, a mention read naturally inside a sentence.
+    _mentions = mentions_for_topic(topic)
+    mention_instruction = (
+        f"Work {' and '.join(_mentions)} into the Instagram caption, in a "
+        f"sentence if it reads naturally, otherwise on its own line before the "
+        f"hashtags. Instagram ONLY: an @handle is dead text on Facebook and "
+        f"LinkedIn. Use these handles exactly, and do not invent others.\n\n"
+        if _mentions else ""
     )
     # A buyer reading a LinkedIn post about an act has nowhere to go to see the
     # act itself; the calendar link books a call, which is a much bigger ask than
@@ -821,10 +852,16 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         "KEEP IT SHORT AND HUMAN. This is the single most important instruction. The client "
         "rejected a 130-word LinkedIn post as sounding AI-written, and the post they asked us "
         "to imitate is 17 words long.\n"
-        "LinkedIn: 200 to 300 characters of copy, 400 absolute maximum. The booking link does not count toward that budget. Two or three sentences plus a "
+        "LinkedIn: 250 to 400 characters of copy, 500 absolute maximum. The booking link does not count toward that budget. Two to four sentences plus a "
         "one-line booking CTA. That is the entire post. Do NOT write paragraphs. Do NOT write a "
         "closing sentence that summarises what you just said. Do NOT explain why a fact matters.\n"
         "Instagram: punchy, a few short lines. Facebook: warm and conversational, still tight.\n"
+        "BE WARM. Write like a person who likes these acts and enjoys booking them, not like a "
+        "listing. Contractions are good. An exclamation mark is fine where it is earned. Asking "
+        "the reader something directly (\"Interested in booking a show?\") beats a label. The "
+        "client's own caption for a video is the calibration: \"The Platters, live! The music "
+        "speaks for itself.\" Warmth is not the same as length: it buys you a few more words, "
+        "not a paragraph.\n"
         "Lead with the single hardest fact you have (a venue, an award, a number, a year), in "
         "the first line. One fact per post, not a stack. Vary your sentence length. Cut every "
         "adjective and check the post still stands; if it collapses, it was fluff. "
@@ -843,6 +880,7 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         f"{booking_cta_instruction}"
         f"{act_link_instruction}"
         f"{instagram_cta_instruction}"
+        f"{mention_instruction}"
         f"{facebook_cta_instruction}"
         f"{tribute_mention_instruction}"
         f"{act_kind_instruction}"
@@ -892,14 +930,46 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     # has been in instagram.md all along and the model honoured it on 2 of 8
     # posts in a real run.
     if isinstance(posts, dict) and posts.get("instagram"):
-        posts["instagram"] = ensure_hashtags(posts["instagram"], topic)
+        # Mentions before hashtags: ensure_hashtags appends its block at the very
+        # end, so running it second keeps the tags last, which is the Instagram
+        # convention and where a reader expects them.
+        posts["instagram"] = ensure_hashtags(
+            ensure_mentions(posts["instagram"], topic), topic
+        )
     return posts
+
+
+# ── Instagram mentions ────────────────────────────────────────────────────────
+
+
+def ensure_mentions(text: str, topic: dict) -> str:
+    """Tag the act and the venue in an Instagram caption.
+
+    Instagram is the only channel where this works: a plain "@handle" linkifies
+    and notifies there, while on Facebook and LinkedIn it is dead text. See
+    ``lp/social_handles.py`` for why, and for how the handles were verified.
+
+    Handles the model already wrote are left where they are, so a mention worked
+    naturally into a sentence beats one bolted onto the end. Anything missing is
+    appended on its own line, which is the ordinary Instagram convention.
+    """
+    text = (text or "").rstrip()
+    if not text:
+        return text
+    lowered = text.lower()
+    missing = [m for m in mentions_for_topic(topic) if m.lower() not in lowered]
+    if not missing:
+        return text
+    return f"{text}\n\n{' '.join(missing)}"
 
 
 # ── Instagram hashtags ────────────────────────────────────────────────────────
 
 _MIN_HASHTAGS = 3
-_MAX_HASHTAGS = 7
+# Buffer accepts at most 5 hashtags on an Instagram post (client, 2026-08-05).
+# This is a hard ceiling imposed downstream, not a style preference, so it is
+# enforced in code by trimming, not asked for in the prompt.
+_MAX_HASHTAGS = 5
 _HASHTAG_RE = re.compile(r"#\w+")
 
 # Evergreen tags by hook type, appended after the act and original-artist tags.
@@ -920,6 +990,9 @@ _DEFAULT_HASHTAGS = ["LiveMusic", "TributeBand", "LiveEntertainment"]
 # #TributeBand tag on Priscilla Presley is the same factual error as the copy
 # saying it, just harder to notice.
 _NON_TRIBUTE_SUBSTITUTE = {"TributeBand": "LiveEntertainment", "TributeBands": "OnTour"}
+# Same idea for the variety and dance acts: #LiveMusic on an illusionist is the
+# engine asserting something untrue, and harder to spot than copy doing it.
+_NON_MUSIC_SUBSTITUTE = {"LiveMusic": "LiveEntertainment", "MusicHistory": "ShowBusiness"}
 
 
 def _to_hashtag(name: str) -> str:
@@ -949,27 +1022,61 @@ def build_hashtags(topic: dict, limit: int = _MAX_HASHTAGS) -> list[str]:
     for original in re.split(r",|&|/| and ", topic.get("original_artist", "") or ""):
         add(_to_hashtag(original.strip()))
     tribute = is_tribute_act(act, topic.get("original_artist", ""))
+    music = is_music_act(act)
     for word in _HOOK_HASHTAGS.get(topic.get("hook_type", ""), _DEFAULT_HASHTAGS):
         if not tribute:
             word = _NON_TRIBUTE_SUBSTITUTE.get(word, word)
+        if not music:
+            word = _NON_MUSIC_SUBSTITUTE.get(word, word)
         add(f"#{word}")
     return tags
 
 
-def ensure_hashtags(text: str, topic: dict) -> str:
-    """Guarantee an Instagram caption ends with hashtags.
+def _trim_hashtags(text: str) -> str:
+    """Drop every hashtag past ``_MAX_HASHTAGS``, keeping the earliest ones.
 
-    ``instagram.md`` has asked for 5 to 10 hashtags all along and the model
-    supplied them on 2 of 8 posts in a real run. This is the same lesson as
+    Buffer rejects an Instagram post carrying more, so a caption that sails past
+    the ceiling is not a slightly worse post, it is no post. The earliest tags
+    are kept because the model puts the specific ones (act, artist) first and
+    the generic ones last. Lines left empty by the removal are dropped, so a
+    caption whose whole trailing block was tags does not end in blank space.
+    """
+    tags = _HASHTAG_RE.findall(text)
+    if len(tags) <= _MAX_HASHTAGS:
+        return text
+    seen = 0
+
+    def cut(match: re.Match) -> str:
+        nonlocal seen
+        seen += 1
+        return match.group(0) if seen <= _MAX_HASHTAGS else ""
+
+    trimmed = _HASHTAG_RE.sub(cut, text)
+    # A removed tag leaves the space that separated it behind.
+    trimmed = re.sub(r"[ \t]{2,}", " ", trimmed)
+    lines = [ln.rstrip() for ln in trimmed.splitlines()]
+    kept = [ln for i, ln in enumerate(lines) if ln or (i and lines[i - 1])]
+    return "\n".join(kept).rstrip()
+
+
+def ensure_hashtags(text: str, topic: dict) -> str:
+    """Hold an Instagram caption's hashtag count between the floor and the cap.
+
+    ``instagram.md`` has asked for hashtags all along and the model supplied
+    them on 2 of 8 posts in a real run. This is the same lesson as
     ``strip_dashes``: a rule the copy must satisfy every time belongs in code,
-    not in a prompt. Captions that already carry enough tags are returned
-    untouched, so the model's own (better, more specific) tags always win.
+    not in a prompt. Captions already inside the range are returned untouched,
+    so the model's own (better, more specific) tags always win. Over the cap
+    they are trimmed, since Buffer refuses the post outright.
     """
     text = (text or "").rstrip()
-    if not text or len(_HASHTAG_RE.findall(text)) >= _MIN_HASHTAGS:
+    if not text:
         return text
+    if len(_HASHTAG_RE.findall(text)) >= _MIN_HASHTAGS:
+        return _trim_hashtags(text)
     existing = {t.lower() for t in _HASHTAG_RE.findall(text)}
-    fresh = [t for t in build_hashtags(topic) if t.lower() not in existing]
+    room = _MAX_HASHTAGS - len(existing)
+    fresh = [t for t in build_hashtags(topic) if t.lower() not in existing][:room]
     return f"{text}\n\n{' '.join(fresh)}" if fresh else text
 
 
@@ -1003,6 +1110,10 @@ _HOOK_CATEGORY_DEFAULTS = {
     "rebooking": ["Celebration"],
     "testimonial": ["Tribute"],
     "act_spotlight": ["Tribute"],
+    # Visual-led posts. The carousel is a roster-wide "on tour now" round-up, so
+    # Tour is right; a clip is the act performing with no date attached.
+    "tour_poster": ["Tour"],
+    "act_video": ["Tribute"],
 }
 
 
@@ -1062,6 +1173,27 @@ def generate_article(
             f'phrased like: "If you\'re interested in booking {tribute}, please follow '
             f'{this_link_anchor} to set up an appointment with Steve Love." Use that '
             'exact HTML hyperlink on the words "this link"; Steve Love stays plain text.\n'
+            "- The \"this link\" anchor is the ONLY link allowed anywhere in the body.\n"
+        )
+    elif topic.get("_acts"):
+        # A roster-wide post (the tour carousel) has no single act, which is why
+        # agency_proof is excluded from the website entirely. This one is not:
+        # it names several real acts, so it can carry a tie-in and a CTA, just
+        # phrased for the group. Keep the CTA wording parallel to the single-act
+        # one above, since both end up on the same site.
+        names = [n for n in topic["_acts"] if n]
+        listed = ", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else names[0]
+        tie_in_instruction = (
+            "\nACT TIE-IN AND BOOKING CTA (both are REQUIRED):\n"
+            f"- This article covers several Love Productions acts: {listed}. Name them "
+            "as plain text, do NOT hyperlink any of them, and do NOT describe any of "
+            "them as a tribute act, tribute band or tribute show: the roster is mixed "
+            "and several of these acts are the original artists themselves.\n"
+            "- End the article with a short closing paragraph inviting bookings, "
+            'phrased like: "If you\'re interested in booking any of these acts, please '
+            f'follow {this_link_anchor} to set up an appointment with Steve Love." Use '
+            'that exact HTML hyperlink on the words "this link"; Steve Love stays plain '
+            "text.\n"
             "- The \"this link\" anchor is the ONLY link allowed anywhere in the body.\n"
         )
 

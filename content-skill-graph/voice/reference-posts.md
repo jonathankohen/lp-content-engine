@@ -196,6 +196,41 @@ would lose no information, delete it. That includes any sentence asserting the
 act is great, the name is big, the booking is proof, or the audience will love
 it. The reader can see all of that from the fact itself.
 
+## Warmer, and a touch wordier (client, 2026-08-05)
+
+The client asked for posts "a tad bit warmer/wordier" and wrote the caption
+themselves, for a video of The Platters:
+
+> The Platters, live! The music speaks for itself.
+>
+> Interested in booking a show? Set up an appointment with Steve Love:
+> https://www.loveproductions.com/go/steve
+
+### What to take from it
+
+- **An exclamation mark, where it is earned.** These posts had been reading like
+  a listing. The agency likes these acts; that can show.
+- **Ask the reader something.** "Interested in booking a show?" does the work a
+  bare "Booking:" label was pretending to do.
+- **Name Steve.** A person to make an appointment with, not a URL on its own.
+- **Still two sentences.** Warmth is not length. The whole caption above is
+  shorter than the post the client rejected. It buys a few more words, not a
+  paragraph. LinkedIn moved from 200-300 characters of copy to 250-400.
+
+### "The music speaks for itself" is not fluff, and here is why
+
+It looks like it fails the show-do-not-tell test above, and it does not. Compare
+the two shapes:
+
+- **Fluff:** "Venues do not repeat a booking that did not sell." That teaches
+  the reader their own job.
+- **Fine:** "The music speaks for itself." / "Repeat dates are the kind of
+  review we like best." That is the agency commenting in its own voice, and it
+  says nothing the reader has to be taught.
+
+The banned move is explaining. One light closing line with some personality in
+it was always allowed, and is now encouraged.
+
 ## The test, before any post goes out
 
 1. Read it aloud. Does it sound like the rejected post or the Reliant one?

@@ -53,9 +53,12 @@ SHOW_DAYS_AHEAD = 7
 # by exclusive/top-of-roster acts. Tunable via env.
 SHOW_BASE_SCORE = float(os.environ.get("SHOW_BASE_SCORE", "0.75"))
 
-# "Back by popular demand" is powerful precisely because it is rare, so
-# re-booking posts are capped hard per run (client direction 2026-07-28).
-REBOOKING_MAX_PER_RUN = int(os.environ.get("REBOOKING_MAX_PER_RUN", "1"))
+# How many re-booking posts a run may draft. Was 1 on the reasoning that "back by
+# popular demand" is powerful precisely because it is rare (client direction
+# 2026-07-28). Raised to 2 on 2026-08-04: the client saw the live Free Fallin 2x
+# post, liked it, and asked for more of them. Still a cap, since the same act and
+# the same handful of venues would otherwise dominate a week.
+REBOOKING_MAX_PER_RUN = int(os.environ.get("REBOOKING_MAX_PER_RUN", "2"))
 
 # How many of the week's slots to hold back for LinkedIn-eligible buyer-proof
 # content (re-bookings, testimonials, act spotlights, agency posts) when the
@@ -80,6 +83,26 @@ MAX_SHOWS_PER_WEEK = int(os.environ.get("MAX_SHOWS_PER_WEEK", "3"))
 # run, zero cards across 16 drafts), so the engine tops up to this number after
 # every other phase has run, queueing the extras when the week has no slot left.
 VISUAL_MIN_PER_WEEK = int(os.environ.get("VISUAL_MIN_PER_WEEK", "2"))
+
+# The visual floor used to run dead last, so its posts took whatever slots were
+# left and queued with no time at all when the week was full. Nothing in the
+# ranked pool ever produces a graphic we made (shows and news carry the source
+# article's og:image), so the shortfall is knowable up front: hold this many
+# slots back before selection, the same way LINKEDIN_RESERVED_SLOTS does, and run
+# the visual phase ahead of the trivia and historical-fact filler. Client
+# direction 2026-08-04: graphic and hard-number posts "should shoot up in
+# priority". Set to 0 to leave the floor as a trailing top-up again.
+VISUAL_RESERVED_SLOTS = int(os.environ.get("VISUAL_RESERVED_SLOTS", str(VISUAL_MIN_PER_WEEK)))
+
+# The tour carousel only earns a post when it looks like a busy roster. One act
+# with four dates is a listing; eight acts with a hundred between them is the
+# "look at all these artists on tour" post the client asked for, so the whole
+# post is skipped below these floors (client direction 2026-08-04: only run it
+# "if there are a lot of dates that can be displayed").
+TOUR_CAROUSEL_MIN_SLIDES = int(os.environ.get("TOUR_CAROUSEL_MIN_SLIDES", "4"))
+TOUR_CAROUSEL_MIN_DATES = int(os.environ.get("TOUR_CAROUSEL_MIN_DATES", "24"))
+# Per act: how many upcoming dates before that act earns a slide of its own.
+TOUR_CAROUSEL_MIN_ACT_DATES = int(os.environ.get("TOUR_CAROUSEL_MIN_ACT_DATES", "4"))
 
 SEARCH_MODEL = "claude-haiku-4-5"
 CONTENT_MODEL = "claude-sonnet-4-6"

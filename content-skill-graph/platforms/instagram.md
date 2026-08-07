@@ -19,16 +19,22 @@
 - Match [Brand Voice](../voice/brand-voice.md) but simpler, more energetic. See [Platform Tone](../voice/platform-tone.md).
 - Captions add context the visuals don't cover. Don't just repeat what's
   visible in the photo.
-- Hashtags: 5-10 relevant ones at the end. Use genre, artist name, city,
-  and venue tags for discovery.
-- Always end with the booking CTA, and on Instagram it is always the same shape:
-  **a DM ask, then link in bio.** Client direction 2026-08-03:
-  "DM us for booking availability. Link in bio for more."
-  Vary the wording slightly; do not vary the shape.
+- **Tag the act, and the venue when there is one.** Instagram is the only place
+  an @handle actually tags anyone, so mentions go in captions and nowhere else.
+  Only use handles you are given. Never guess one: a wrong handle tags a
+  stranger in a post published under the agency's name.
+- Hashtags: **at most 5**, at the end. Buffer rejects an Instagram post that
+  carries more, so this is a hard ceiling, not a preference (client direction
+  2026-08-05). Spend them on the specific ones first: act, artist, city, venue.
+  Generic tags come last and are the ones dropped if there is no room.
+- Always end with the booking CTA, and on Instagram it is always this exact
+  line (client direction 2026-08-04):
+  "Link in bio to set up an appointment for booking."
+  Do not reword it. It replaced the earlier DM ask.
 - **Never put a URL or an email address in a caption.** Instagram captions do
   not linkify, so a URL is dead text a reader cannot use, and asking for an
-  email is a higher bar than asking for a DM. This replaces the old
-  "Email info@loveproductions.com" option, which is no longer allowed here.
+  email is a higher bar than tapping the bio link. This also rules out the old
+  "Email info@loveproductions.com" option.
 
 ## Carousel Design Rules
 
@@ -36,7 +42,7 @@
 - One idea per slide. Max 30 words per slide.
 - Consistent color scheme across all slides (Love Productions brand colors).
 - Slide 1: Big bold text, no more than 8 words.
-- Last slide: "DM us for booking availability. Link in bio for more." No email, no raw URLs.
+- Last slide: "Link in bio to set up an appointment for booking." No email, no raw URLs.
 
 ## Posting Strategy
 
