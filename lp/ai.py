@@ -7,7 +7,12 @@ import anthropic
 from anthropic.types import TextBlock
 
 from . import config
-from .artist_links import display_act, lookup_artist_url, short_act_name
+from .artist_links import (
+    banned_act_name_in,
+    display_act,
+    lookup_artist_url,
+    short_act_name,
+)
 from .scrape import extract_page_quotes, fetch_page_prose, verify_quote_on_page
 from .social_handles import mentions_for_topic
 
@@ -746,8 +751,11 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         else ""
     )
     # Tribute act name: prefer the Airtable act (_act) since for original-artist
-    # news the `artist` field can be the original artist.
-    tribute = (topic.get("_act") or topic.get("artist", "")).strip()
+    # news the `artist` field can be the original artist. display_act() is what
+    # makes the name printable: it un-inverts filing order and applies the
+    # client's name overrides, so a name we may not publish never reaches the
+    # copy in the first place.
+    tribute = display_act(topic.get("_act") or topic.get("artist", ""))
     is_tribute = is_tribute_act(tribute, topic.get("original_artist", ""))
     tribute_mention_instruction = (
         f"IMPORTANT: Every platform post MUST mention the act by name "
@@ -824,7 +832,14 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     # "show me more". Client direction 2026-08-03, with the wording taken from
     # their own rewrite. Restricted to act-led hooks, since a trivia post about
     # Jimi Hendrix linking to our tribute page would be a non sequitur.
-    act_page_url = (topic.get("artist_url") or "").strip() or lookup_artist_url(tribute)
+    act_page_url = (topic.get("artist_url") or "").strip() or lookup_artist_url(
+        topic.get("_act") or topic.get("artist", "")
+    )
+    # A URL is visible text on LinkedIn, so a slug carrying a banned word breaks
+    # the rule just as loudly as the copy would. No link beats a link we may not
+    # print; the booking line still gives the reader somewhere to go.
+    if act_page_url and banned_act_name_in(act_page_url):
+        act_page_url = ""
     act_link_instruction = (
         f"After the booking line, leave a BLANK LINE, then add ONE final line "
         f"linking to the act's page, exactly in this shape:\n"
@@ -836,7 +851,18 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         if act_page_url and topic.get("hook_type", "") in _ACT_LED_HOOKS
         else ""
     )
+    # Ask first, then check in code. The check above drops a post outright, and a
+    # post that gets dropped is a slot the client never sees filled, so it is
+    # worth spending a few prompt lines to keep the model off the word.
+    banned_words_instruction = (
+        "HARD RULE: never call the act 'Elvis' or 'Elvis: The Concert of Kings'. "
+        "Its name is exactly the name given under 'Act:' below, use that and "
+        "nothing else, including in hashtags. Naming Elvis Presley as the "
+        "original artist is fine; naming the ACT that way is not, and a post "
+        "that does is discarded.\n\n"
+    )
     user_prompt = (
+        f"{banned_words_instruction}"
         "Generate social media content for Love Productions based on this news topic:\n\n"
         f"Act: {tribute}\n"
         f"Original Artist: {topic.get('original_artist', '') or 'N/A'}\n"
@@ -936,6 +962,19 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         posts["instagram"] = ensure_hashtags(
             ensure_mentions(posts["instagram"], topic), topic
         )
+    # A banned act name cannot be scrubbed out of a sentence the way a dash can,
+    # so the guard drops the post and says so rather than publishing a violation
+    # or mangling the copy. It fires rarely: display_act() already keeps the
+    # act's own name clean, and this only catches the model reaching for the old
+    # name on its own.
+    if isinstance(posts, dict):
+        for platform in list(posts):
+            if bad := banned_act_name_in(posts.get(platform) or ""):
+                log.error(
+                    "Dropped %s post for '%s': banned act name '%s' in the copy",
+                    platform, topic.get("headline", "")[:60], bad,
+                )
+                posts[platform] = ""
     return posts
 
 
@@ -1014,7 +1053,10 @@ def build_hashtags(topic: dict, limit: int = _MAX_HASHTAGS) -> list[str]:
     tags, seen = [], set()
 
     def add(tag: str) -> None:
-        if tag and tag.lower() not in seen and len(tags) < limit:
+        # A banned word is banned in a hashtag too, and this is where the engine
+        # would produce one on its own: #ElvisPresley off the original-artist
+        # mapping, which is harder to spot than copy doing it.
+        if tag and tag.lower() not in seen and len(tags) < limit and not banned_act_name_in(tag):
             seen.add(tag.lower())
             tags.append(tag)
 
@@ -1146,7 +1188,8 @@ def generate_article(
 
     # The tribute act name: prefer the Airtable act (_act) since for
     # original-artist news the `artist` field can be the original artist.
-    tribute = (topic.get("_act") or topic.get("artist", "")).strip()
+    # display_act() applies the client's name overrides (see generate_posts).
+    tribute = display_act(topic.get("_act") or topic.get("artist", ""))
     this_link_anchor = (
         f'<a href="{appointment_url}">this link</a>' if appointment_url else "this link"
     )

@@ -60,18 +60,53 @@ def lookup_artist_url(name: str) -> str:
 
 _INVERTED_RE = re.compile(r"^(.*?),\s*(the|a|an)$", re.I)
 
+# Airtable name (normalized) → the name we are allowed to print.
+#
+# Client direction 2026-08-12: the act may not be called "Elvis" anything, so it
+# is called by the rest of its own name. The Airtable name is left alone
+# deliberately: dedup keys, the artists.md mapping and the tour-sheet tab match
+# all key on it. Only the printed form changes.
+ACT_DISPLAY_OVERRIDES: dict[str, str] = {
+    "elvis: the concert of kings": "The Concert of Kings",
+    "concert of kings": "The Concert of Kings",
+}
+
+# Names an act may not be called in published copy. Scoped to the ACT, not to
+# the word: the client's ban (2026-08-12) is on calling the act "Elvis", and
+# "Elvis Presley" as the original artist is still fair game (client confirmed).
+# So the pattern matches "Elvis" only when it is NOT followed by "Presley",
+# which is how the act gets referred to and how the old name is spelled.
+_BANNED_ACT_RE = re.compile(r"\belvis\b(?!\s+presley\b)", re.I)
+
+
+def banned_act_name_in(text: str) -> str:
+    """Return the offending fragment if ``text`` calls an act by a banned name.
+
+    Empty string means clean. Used as a fail-closed guard on generated copy and
+    on act-page URLs: a slug is visible text on LinkedIn, so
+    ``/title-item/elvis-the-concert-of-kings/`` breaks the rule as loudly as the
+    copy would.
+    """
+    match = _BANNED_ACT_RE.search((text or "").replace("-", " "))
+    return match.group(0) if match else ""
+
 
 def display_act(act: str) -> str:
-    """Un-invert a filing-order act name: 'Platters, The' -> 'The Platters'.
+    """The act's name as it is allowed to appear in published copy.
 
-    Airtable files two acts alphabetically. That is right for a list and wrong
-    everywhere else: it looks like a database error on a card, and it silently
-    broke the tour-sheet lookup, whose tabs are named the natural way ("The
-    Platters"), so those acts resolved to zero dates.
+    Un-inverts filing order ('Platters, The' -> 'The Platters'): Airtable files
+    two acts alphabetically, which is right for a list and wrong everywhere else.
+    It looks like a database error on a card, and it silently broke the
+    tour-sheet lookup, whose tabs are named the natural way.
+
+    Then applies ACT_DISPLAY_OVERRIDES, which is how a name the client cannot
+    print gets replaced everywhere at once.
     """
     act = (act or "").strip()
     match = _INVERTED_RE.match(act)
-    return f"{match.group(2).title()} {match.group(1)}" if match else act
+    if match:
+        act = f"{match.group(2).title()} {match.group(1)}"
+    return ACT_DISPLAY_OVERRIDES.get(act.casefold(), act)
 
 
 def short_act_name(act: str) -> str:

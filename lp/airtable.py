@@ -234,10 +234,17 @@ def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> lis
         fields = r.get("fields", {})
         title = _str(fields.get("Show Title", ""))
         venue_raw = _str(fields.get("Venue Address", ""))
-        # Venue names are hand-typed and some carry a line break ("New Barn
-        # Theater\nRenfro Valley Entertainment Center"), which would land in the
-        # middle of a sentence in the post.
-        venue = re.sub(r"\s+", " ", _str(fields.get("Venue", ""))).strip()
+        # Venue names are hand-typed and some carry a line break, where the
+        # second line is the parent complex, not part of the name ("New Barn
+        # Theater\nRenfro Valley Entertainment Center"). Joining the lines put
+        # the whole thing in the middle of a sentence and on a stat card, and the
+        # client's correction (2026-08-12) was that the venue is just "New Barn
+        # Theater". So keep the FIRST line only. Grouping is unaffected in the
+        # cases that matter: two rooms inside one complex still differ on line
+        # one, which is the line that names them.
+        venue_field = _str(fields.get("Venue", ""))
+        first_line = next((ln for ln in venue_field.splitlines() if ln.strip()), "")
+        venue = " ".join(first_line.split())
         show_date = _parse_show_date(fields.get("Show Date", ""))
         if not title or not (venue or venue_raw) or show_date is None:
             continue
