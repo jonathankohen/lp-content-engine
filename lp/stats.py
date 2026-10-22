@@ -144,11 +144,16 @@ def rebooking_stat(topic: dict) -> dict | None:
         count, f"{count} times")
     context = f"{venue} has brought {act} back {times}"
     context = f"{context}, {span}." if span else f"{context}."
+    hist = topic.get("_venue_history")
     return {
         "value":   f"{count}x",
         "label":   f"booked by {venue}",
         "context": context,
-        "source":  "airtable contracts",
+        # Every date behind the number is corroborated outside Airtable (see
+        # lp.date_check), so name what it was actually read from rather than
+        # asserting it. A topic with no evidence block never reaches a card.
+        "source":  (f"published sources: {', '.join(hist['sources'])}"
+                    if hist else "airtable contracts"),
     }
 
 

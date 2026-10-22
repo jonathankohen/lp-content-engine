@@ -55,7 +55,7 @@ once, which is what "so AI" actually means.
 > Rus Anderson performs Elton John's catalogue in Elton's actual costumes from
 > the 1970s. The boots, the glasses, the jumpsuits. He owns them.
 >
-> Booking: [calendar link]
+> Booking inquiries: info@loveproductions.com
 
 Around 200 characters. One fact, the one nobody else can claim, stated plainly.
 No adjectives doing the work of evidence. Nothing to wade through.

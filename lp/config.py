@@ -41,6 +41,19 @@ LP_NEWS_SECRET = os.environ.get("LP_NEWS_SECRET", "")
 # unset, the CTA still appears but Steve's name is rendered as plain text.
 STEVE_CALENDAR_LINK = os.environ.get("STEVE_CALENDAR_LINK", "")
 
+# The booking contact on social posts (client direction 2026-08-18: go back to
+# the email everywhere on social). The calendar link above is still the CTA on
+# website news articles, where it is an anchor on the words "this link" rather
+# than a URL spending a post's character budget.
+BOOKING_EMAIL = os.environ.get("BOOKING_EMAIL", "info@loveproductions.com")
+
+# How many dates one run may spend a web search on to corroborate a re-booking
+# count (see lp/date_check.py). A search with the web_search tool attached runs
+# about $0.15, an order of magnitude more than an ordinary Haiku call, so this
+# keeps date-checking from eating a run's whole COST_CAP_USD. Negative answers
+# are cached, so the spend is front-loaded onto new pairings.
+DATE_CHECK_MAX_SEARCHES = int(os.environ.get("DATE_CHECK_MAX_SEARCHES", "8"))
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AIRTABLE_PRIORITY_ORDER = ["Top of Roster", "Exclusive", "Core Roster"]
@@ -59,6 +72,9 @@ SHOW_BASE_SCORE = float(os.environ.get("SHOW_BASE_SCORE", "0.75"))
 # post, liked it, and asked for more of them. Still a cap, since the same act and
 # the same handful of venues would otherwise dominate a week.
 REBOOKING_MAX_PER_RUN = int(os.environ.get("REBOOKING_MAX_PER_RUN", "2"))
+# At this count and above, check the act's own published date list for bookings
+# older than Airtable reaches (2023). Set to 0 to turn the lookup off entirely.
+VENUE_HISTORY_MIN_COUNT = int(os.environ.get("VENUE_HISTORY_MIN_COUNT", "3"))
 
 # How many of the week's slots to hold back for LinkedIn-eligible buyer-proof
 # content (re-bookings, testimonials, act spotlights, agency posts) when the

@@ -68,6 +68,10 @@ the strongest proof there is: a buyer who took the risk once took it again.
   return happens ("for a second time this October") is good: it makes the
   booking concrete rather than a statistic.
 - Name the specific venue. Do not round, exaggerate, or guess at a number.
+- **Use the count exactly as given.** Every date behind it has been checked
+  against a published source outside our own records, so the number in the
+  topic is the number that can be defended. Nudging it up puts a claim in
+  the post that nothing backs.
 - **Never explain to the reader what a re-booking means.** They book talent for
   a living. Lines like "venues do not repeat a booking that did not sell" or
   "when a venue books you twice, they're telling you something" tell a

@@ -90,10 +90,10 @@ Phrases we never use:
 
 ## The booking CTA
 
-- **Buyer-facing posts (LinkedIn) point at Steve Love's calendar link**, supplied
-  in the prompt. That is a booking appointment, a lower bar than composing an
-  email, so it converts better. Falls back to info@loveproductions.com only when
-  no link is supplied. Never use both in one post.
+- **Buyer-facing posts (LinkedIn) end with "Booking inquiries:
+  info@loveproductions.com"**, the same line Facebook uses. Never a booking or
+  calendar URL: that is the website article's job, where the link is an anchor
+  on a few words rather than a URL eating the post's character budget.
 - **Fan-facing posts (Instagram, Facebook)** point at tickets, not at booking.
   Fans cannot book an act.
 - Instagram captions do not linkify. Never paste a long URL into one; it is dead

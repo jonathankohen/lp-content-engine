@@ -301,6 +301,10 @@ def fetch_rebookings(mappings: dict | None = None, min_bookings: int = 2) -> lis
             "ticket_url":      None,
             "_act":            title,
             "_rebooking_count": count,
+            # The dates themselves, not just the count, because every one of
+            # them has to be corroborated outside Airtable before it can be
+            # printed on a graphic (see lp.date_check).
+            "_dates":          [d.isoformat() for d in dates],
             # Kept as discrete fields (not just baked into the prose) so
             # lp.stats can render the number on a card without re-parsing it
             # back out of the summary.

@@ -223,6 +223,7 @@ def edit_post_draft(
     platform: str = "",
     text: str | None = None,
     image: str | None = None,
+    images: list[str] | None = None,
     video: str | None = None,
     scheduled_at: datetime | None = None,
     keep_scheduled: bool = False,
@@ -242,11 +243,16 @@ def edit_post_draft(
     Instagram edit needs at least one image (the LP logo placeholder is the
     fallback). Only fields that are passed are sent, so editing text alone
     leaves any attached asset untouched.
+
+    ``images`` replaces a whole carousel and takes precedence over ``image``,
+    matching :func:`post_draft_to_buffer`. Buffer's ``assets`` is a list, so a
+    re-rendered carousel has to be sent as one: passing only the changed slide
+    would leave the post carrying that single slide.
     """
     if dry_run:
         log.info("[dry-run] would edit %s draft %s%s%s", platform, post_id,
                  " (text)" if text is not None else "",
-                 " (image)" if image else "")
+                 f" ({len(images)} images)" if images else " (image)" if image else "")
         return True
 
     # saveToDraft MUST be sent on every edit. Omitting it does not "leave the
@@ -290,10 +296,12 @@ def edit_post_draft(
         post_input["metadata"] = {
             "instagram": {"type": "reel" if video else "post", "shouldShareToFeed": True}
         }
-        if not video:
+        if not video and not images:
             image = image or _IG_PLACEHOLDER
     if video:
         post_input["assets"] = [{"video": {"url": video}}]
+    elif images:
+        post_input["assets"] = [{"image": {"url": u}} for u in images]
     elif image:
         post_input["assets"] = [{"image": {"url": image}}]
 
@@ -421,6 +429,13 @@ def fetch_top_performers(n: int = 3) -> list[dict]:
 # ── Expired draft cleanup ─────────────────────────────────────────────────────
 
 
+# How far back a bare, year-less date may sit before it is read as next year's
+# rather than this year's. Wide enough to cover a draft still sitting in the
+# queue after its show, narrow enough that a date two seasons "past" is
+# correctly understood as one still to come.
+_BARE_DATE_PAST_DAYS = 60
+
+
 def _extract_earliest_date(text: str) -> datetime | None:
     today = datetime.now(tz=timezone.utc).date()
     earliest = None
@@ -438,7 +453,22 @@ def _extract_earliest_date(text: str) -> datetime | None:
             try:
                 dt = datetime.strptime(raw.strip(), fmt)
                 if dt.year == 1900:
+                    # A bare "January 14" carries no year, and pinning it to the
+                    # current one silently reads a date months ahead as one months
+                    # past. On 2026-08-19 that deleted two live Arrival drafts
+                    # announcing January 14-16 **2027** shows: strptime gave 1900,
+                    # this pinned it to 2026-01-14, and the purge saw an expired
+                    # show.
+                    #
+                    # So roll forward to next year when the current-year reading
+                    # is far enough back that no one would still be drafting it,
+                    # while leaving a date that has only just passed alone: that
+                    # near-past case is the whole reason the purge exists, and
+                    # rolling it forward would stop the purge ever firing on a
+                    # bare date.
                     dt = dt.replace(year=today.year)
+                    if (today - dt.date()).days > _BARE_DATE_PAST_DAYS:
+                        dt = dt.replace(year=today.year + 1)
                 date = dt.date()
                 if earliest is None or date < earliest:
                     earliest = date

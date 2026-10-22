@@ -440,6 +440,67 @@ def search_trivia(tribute: str, original: str) -> list[dict]:
     return items[:1]
 
 
+def search_date_citations(act: str, venue: str, show_date: str) -> list[str]:
+    """Search the web for pages that show ``act`` played ``venue`` on that date.
+
+    Returns candidate source URLs, most direct first, and never a verdict: the
+    model's job here is to *find* pages, and whether a page actually carries the
+    date is decided in code by ``verify_date_on_page()``. That split is
+    deliberate and is the same one testimonials use. A model asked to confirm a
+    date will confirm it, and asked to count rows it invents them (see
+    CLAUDE.md), so nothing it asserts is taken as evidence on its own.
+
+    Used when a re-booking count rests on Airtable alone. Airtable is our own
+    contract record, which is why it can be an accurate count of contracts and
+    still be the wrong number to print: a contract is not proof the night
+    happened, and the client asked for these numbers to be checked outside it.
+    """
+    if config.claude_call_count >= config.CLAUDE_CALL_LIMIT or not config.under_cost_cap(act):
+        return []
+
+    prompt = (
+        f"Search the web for evidence that '{act}' performed at '{venue}' on "
+        f"{show_date}. Look for the venue's own calendar or archive, a ticket "
+        f"listing, a local press listing or review, or the act's own tour page. "
+        f"Do NOT judge whether the date is real and do NOT explain. Return ONLY "
+        f"a JSON array of up to 4 source URLs, most directly relevant first, as "
+        f"plain strings. Return [] if you find nothing. Prefer pages that print "
+        f"the full date. Exclude loveproductions.com. "
+        f"No text outside the JSON array."
+    )
+
+    config.claude_throttle()
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    try:
+        raw = client.messages.with_raw_response.create(
+            model=config.SEARCH_MODEL,
+            max_tokens=config.MAX_TOKENS,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resp = raw.parse()
+        config.claude_call_done(dict(raw.headers))
+        config.track_cost(resp, config.SEARCH_MODEL)
+    except Exception as exc:
+        config.record_api_exception(exc, "Show-date search")
+        log.error("Show-date search error for %s at %s on %s: %s", act, venue, show_date, exc)
+        return []
+
+    text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
+    text = re.sub(r"```(?:json)?\s*", "", text)
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        urls = json.loads(match.group())
+    except json.JSONDecodeError:
+        return []
+    # Our own site cannot corroborate our own contract record.
+    return [u for u in urls
+            if isinstance(u, str) and u.startswith("http")
+            and "loveproductions.com" not in u.lower()][:4]
+
+
 def search_testimonials(tribute: str, original: str = "") -> list[dict]:
     """Search for a genuine, published quote about a tribute act.
 
@@ -779,22 +840,17 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         f"channel, recreate or perform the music of anyone. Refer to them simply "
         f"as the act, the artist, or by name.\n\n"
     )
-    # LinkedIn is written to talent buyers, so its CTA is a booking appointment
-    # rather than an email: a lower bar than composing a message, and the client
-    # asked for the calendar link specifically (2026-07-31). The model cannot use
-    # a URL it was never given, so it is passed in here rather than left to the
-    # skill graph, which only describes the rule.
+    # LinkedIn's booking CTA is the agency email, not Steve's calendar link
+    # (client direction 2026-08-18, reversing 2026-07-31). Every social channel
+    # now asks for the same thing, and the line matches the one the client wrote
+    # for Facebook themselves. The calendar link is still the CTA on website
+    # articles, where it is an anchor rather than a printed URL.
     booking_cta_instruction = (
-        f"The LinkedIn booking CTA must be a single short line pointing at this "
-        f"calendar link: {config.STEVE_CALENDAR_LINK}\n"
-        f"Vary the wording ('Booking: <link>' / 'Availability: <link>' / "
-        f"'Book a time with Steve Love: <link>'). Use the link exactly as given. "
-        f"Do NOT also include an email address; the link replaces it. This is the "
-        f"URL allowed in the LinkedIn post apart from the act-page link below.\n\n"
-        if config.STEVE_CALENDAR_LINK
-        else
-        "End the LinkedIn post with a single short booking line using "
-        "info@loveproductions.com. One line, never a paragraph.\n\n"
+        f"End the LinkedIn post with exactly this line, word for word:\n"
+        f"Booking inquiries: {config.BOOKING_EMAIL}\n"
+        f"One line, never a paragraph. Do NOT include a booking or calendar URL "
+        f"anywhere in the post; the email replaces it. The only other URL "
+        f"allowed is the act-page link below.\n\n"
     )
     # Facebook ends with a booking line, in the shape the client used in their
     # own rewrite (2026-08-03): the source link, then "Booking inquiries:" and
@@ -802,16 +858,21 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
     # and unlike Instagram there is no DM convention to lean on.
     facebook_cta_instruction = (
         "End the Facebook post with the source link (if there is one) and then "
-        "one final line: 'Booking inquiries: info@loveproductions.com'. Nothing "
+        f"one final line: 'Booking inquiries: {config.BOOKING_EMAIL}'. Nothing "
         "after it.\n\n"
     )
     # Instagram cannot linkify a caption, so a URL there is dead text and an
     # email address asks for more effort than the bio link. Client direction
     # 2026-08-04: one fixed line, pointing at the bio link. This replaced the
     # earlier DM ask (2026-08-03).
+    # A show announcement is read by fans who want tickets, not only by buyers,
+    # so its CTA names tickets first (client direction 2026-08-17). Same fixed
+    # shape and the same reason: one line, no URL, no email.
+    _ig_cta = (IG_SHOW_CTA if topic.get("hook_type") == "upcoming_show"
+               else IG_BOOKING_CTA)
     instagram_cta_instruction = (
-        "End the Instagram caption with exactly this booking CTA, word for word: "
-        "\"Link in bio to set up an appointment for booking.\" Do not reword it, "
+        "End the Instagram caption with exactly this CTA, word for word: "
+        f"\"{_ig_cta}\" Do not reword it, "
         "and never put a URL or an email address in an Instagram caption: "
         "captions do not linkify, so a link is dead text.\n\n"
     )
@@ -828,8 +889,8 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         if _mentions else ""
     )
     # A buyer reading a LinkedIn post about an act has nowhere to go to see the
-    # act itself; the calendar link books a call, which is a much bigger ask than
-    # "show me more". Client direction 2026-08-03, with the wording taken from
+    # act itself; the booking line asks them to write an email, a much bigger ask
+    # than "show me more". Client direction 2026-08-03, with the wording taken from
     # their own rewrite. Restricted to act-led hooks, since a trivia post about
     # Jimi Hendrix linking to our tribute page would be a non sequitur.
     act_page_url = (topic.get("artist_url") or "").strip() or lookup_artist_url(
@@ -960,8 +1021,12 @@ def generate_posts(topic: dict, skill_graph: str, performance_context: str = "")
         # end, so running it second keeps the tags last, which is the Instagram
         # convention and where a reader expects them.
         posts["instagram"] = ensure_hashtags(
-            ensure_mentions(posts["instagram"], topic), topic
+            ensure_ig_cta(ensure_mentions(posts["instagram"], topic), topic), topic
         )
+    # LinkedIn's booking line is fixed too, and the model has months of prompts
+    # behind it telling it to print a calendar URL there.
+    if isinstance(posts, dict) and posts.get("linkedin"):
+        posts["linkedin"] = ensure_booking_cta(posts["linkedin"])
     # A banned act name cannot be scrubbed out of a sentence the way a dash can,
     # so the guard drops the post and says so rather than publishing a violation
     # or mangling the copy. It fires rarely: display_act() already keeps the
@@ -1008,6 +1073,16 @@ _MIN_HASHTAGS = 3
 # Buffer accepts at most 5 hashtags on an Instagram post (client, 2026-08-05).
 # This is a hard ceiling imposed downstream, not a style preference, so it is
 # enforced in code by trimming, not asked for in the prompt.
+# Instagram's two fixed CTAs. Captions do not linkify, so neither carries a URL
+# or an email: the bio link is the only thing a reader can actually act on.
+#
+# Buyer-facing posts (re-bookings, spotlights, testimonials, news) ask for a
+# booking appointment. **Show announcements ask about tickets first** (client
+# direction 2026-08-17): that post is read by fans who want to attend, and
+# sending them to a booking calendar answers a question they did not ask.
+IG_BOOKING_CTA = "Link in bio to set up an appointment for booking."
+IG_SHOW_CTA = "Link in bio for more info on tickets and booking."
+
 _MAX_HASHTAGS = 5
 _HASHTAG_RE = re.compile(r"#\w+")
 
@@ -1099,6 +1174,75 @@ def _trim_hashtags(text: str) -> str:
     lines = [ln.rstrip() for ln in trimmed.splitlines()]
     kept = [ln for i, ln in enumerate(lines) if ln or (i and lines[i - 1])]
     return "\n".join(kept).rstrip()
+
+
+# Horizontal whitespace only. A leading \s* would swallow the blank line above
+# the CTA and glue it to the line before.
+_CTA_RE = re.compile(r"^[ \t]*link in bio\b.*$", re.I | re.M)
+
+
+def ensure_ig_cta(text: str, topic: dict) -> str:
+    """Guarantee the caption ends on the right fixed CTA for its hook type.
+
+    Same reasoning as ``ensure_hashtags`` and ``strip_dashes``: the CTA is
+    specified word for word, so it belongs in code rather than in a prompt the
+    model can drift from. It matters more here than usual, because the two lines
+    differ by only a few words and a show announcement carrying the buyer CTA is
+    a mistake no reader would flag but every fan would feel.
+
+    Any existing "Link in bio..." line is replaced in place, so the CTA keeps
+    the position the model chose for it (above the hashtags). A caption with
+    none gets one appended.
+    """
+    text = (text or "").rstrip()
+    if not text:
+        return text
+    want = (IG_SHOW_CTA if topic.get("hook_type") == "upcoming_show"
+            else IG_BOOKING_CTA)
+    if _CTA_RE.search(text):
+        return _CTA_RE.sub(lambda _: want, text, count=1)
+    tags = _HASHTAG_RE.search(text)
+    if tags:
+        # Slot it in above the trailing hashtag block rather than after it.
+        head, tail = text[:tags.start()].rstrip(), text[tags.start():].strip()
+        return f"{head}\n\n{want}\n\n{tail}"
+    return f"{text}\n\n{want}"
+
+
+# A LinkedIn booking line is a line carrying a booking word AND a contact (an
+# email or a URL). Both halves are required: "repeat bookings are the review we
+# like best" is copy, not a CTA, and the act-page line carries a URL but no
+# booking word. Anything matching is the CTA, whatever the model called it.
+_LI_BOOKING_RE = re.compile(
+    r"^[ \t]*[^\n]*\b(?:booking|bookings|availability|book a time|appointment)\b"
+    r"[^\n]*(?:https?://|www\.|[\w.+-]+@[\w-]+\.[\w.]+)[^\n]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# The act-page line, so an appended CTA lands above it rather than after it.
+_LI_ACT_LINK_RE = re.compile(r"^[ \t]*More on .+ here: \S+$", re.IGNORECASE | re.MULTILINE)
+
+
+def ensure_booking_cta(text: str) -> str:
+    """Guarantee a LinkedIn post ends on the fixed booking line.
+
+    Same lesson as ``ensure_ig_cta`` and ``strip_dashes``: a line specified word
+    for word belongs in code, not in a prompt. It matters here because the model
+    spent months being told to print Steve's calendar link, and a stray booking
+    URL is exactly what the client asked us to stop sending (2026-08-18).
+
+    An existing booking line is replaced in place, so the CTA keeps its position
+    above the act-page link. A post with none gets one, above that link.
+    """
+    text = (text or "").rstrip()
+    if not text:
+        return text
+    want = f"Booking inquiries: {config.BOOKING_EMAIL}"
+    if _LI_BOOKING_RE.search(text):
+        return _LI_BOOKING_RE.sub(lambda _: want, text, count=1)
+    if (link := _LI_ACT_LINK_RE.search(text)):
+        head, tail = text[:link.start()].rstrip(), text[link.start():].strip()
+        return f"{head}\n\n{want}\n\n{tail}"
+    return f"{text}\n\n{want}"
 
 
 def ensure_hashtags(text: str, topic: dict) -> str:

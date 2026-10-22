@@ -27,10 +27,16 @@
   carries more, so this is a hard ceiling, not a preference (client direction
   2026-08-05). Spend them on the specific ones first: act, artist, city, venue.
   Generic tags come last and are the ones dropped if there is no room.
-- Always end with the booking CTA, and on Instagram it is always this exact
-  line (client direction 2026-08-04):
-  "Link in bio to set up an appointment for booking."
-  Do not reword it. It replaced the earlier DM ask.
+- Always end with a CTA, and on Instagram it is always one of two exact lines.
+  Do not reword either one. Which one depends on the post:
+  - **Show announcements** (a date, a venue, a night a reader could attend):
+    "Link in bio for more info on tickets and booking." (client direction
+    2026-08-17). That post is read by fans who want tickets, so tickets come
+    first.
+  - **Everything else** (re-bookings, act spotlights, testimonials, news,
+    trivia, clips, the tour carousel):
+    "Link in bio to set up an appointment for booking." (client direction
+    2026-08-04, it replaced the earlier DM ask).
 - **Never put a URL or an email address in a caption.** Instagram captions do
   not linkify, so a URL is dead text a reader cannot use, and asking for an
   email is a higher bar than tapping the bio link. This also rules out the old

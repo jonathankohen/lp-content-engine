@@ -16,7 +16,7 @@ ensures the core result and credibility are clear before you adapt for fans.
   Not upcoming shows or ticket dates, those are Instagram and Facebook only.
 - Output: short professional post, 250-400 characters of copy, two to four
   sentences. Not a paragraph.
-- End with a one-line booking CTA pointing at Steve's calendar link.
+- End with the one-line booking CTA: "Booking inquiries: info@loveproductions.com".
 - Note: for show/date topics and original-artist topics, LinkedIn is skipped
   entirely. Writing the buyer angle first is still a useful thinking step, but
   only genuine tribute-act news actually gets posted to LinkedIn.
@@ -31,7 +31,9 @@ this show."
   with patron satisfaction reviews averaging 4.9/5."
 - Instagram says: "SOLD OUT. Again. 🎸 The Dolly Show is back this fall, 
   and tickets will go fast. Link in bio to set up an appointment for booking."
-- Output: Image or carousel post + caption with hashtags and the fixed booking CTA.
+- Output: Image or carousel post + caption with hashtags and whichever of the two
+  fixed CTAs fits (see [Instagram](../platforms/instagram.md); a show
+  announcement gets the tickets one).
 
 ### Step 3: [Facebook](../platforms/facebook.md) (Community, Conversation)
 

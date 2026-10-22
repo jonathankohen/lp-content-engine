@@ -34,8 +34,10 @@ from lp.airtable import (
     show_to_topic,
 )
 from lp.ai import (
+    IG_BOOKING_CTA,
     build_act_spotlight_topic,
     ensure_hashtags,
+    ensure_ig_cta,
     ensure_mentions,
     is_music_act,
     build_agency_topic,
@@ -128,14 +130,20 @@ def _image_for(
 
 # Instagram captions do not linkify, so a booking URL there is dead text and an
 # email is a higher bar than the bio link. Client direction 2026-08-04: Instagram
-# always ends with this one line (it replaced the DM ask of 2026-08-03). The same
-# line is specified to the model in generate_posts() and in
-# platforms/instagram.md, so generated and hardcoded captions match.
-_IG_BOOKING_CTA = "Link in bio to set up an appointment for booking."
+# always ends with this one line (it replaced the DM ask of 2026-08-03).
+#
+# Imported rather than retyped: the same string is specified to the model in
+# generate_posts() and enforced by ensure_ig_cta(), and the three drifting apart
+# is exactly how a hardcoded caption ends up not matching a generated one. The
+# visual posts here are never show announcements, so they take the booking CTA;
+# IG_SHOW_CTA is the ticket-first variant generate_posts() uses for those.
+_IG_BOOKING_CTA = IG_BOOKING_CTA
 # The booking ask on Facebook and LinkedIn visual posts, in the client's own
 # words (2026-08-05). It replaced a bare "Booking: <url>", which asked nothing
-# and read like a field label. The URL follows on the same line.
-_BOOKING_ASK = "Interested in booking a show? Set up an appointment with Steve Love:"
+# and read like a field label. The contact follows on the same line, and it is
+# the agency email rather than Steve's calendar link (client direction
+# 2026-08-18: the email, on every social channel).
+_BOOKING_ASK = "Interested in booking a show? Email"
 
 
 # Cruise contracts (client direction 2026-08-04: take Kyle Martin's Piano Man off
@@ -327,6 +335,33 @@ def _with_credential_stats(topic: dict, name: str, artist_url: str) -> dict:
         topic["_credential_stats"] = found
         log.info("  credential stat for %s: %s %s", name, found[0]["value"], found[0]["label"])
     return topic
+
+
+def _verified_rebookings(topics: list[dict], want: int) -> list[dict]:
+    """Settle each re-booking's number against sources outside Airtable.
+
+    **A count that only Airtable can support is not publishable (client
+    direction 2026-08-18); the dates have to be searched for.** Airtable is our
+    own contract record, which makes it the right place to find a re-booking and
+    the wrong place to prove one. `lp.date_check` raises the count from the act's
+    own published listings where it can (Airtable starts in 2023, so a decade of
+    repeat bookings reads as 3x) and drops any date nothing published can back.
+
+    Walks strongest-first and stops once `want` pairings survive, because the
+    search costs a Claude call per unproven date and only the pairings that
+    reach a post are worth spending it on. A pairing that fails is skipped and
+    the next one is tried, so a dropped number costs a post only when the whole
+    list runs out.
+    """
+    from lp.date_check import verify_rebooking
+
+    out: list[dict] = []
+    for topic in topics:
+        if len(out) >= want:
+            break
+        if (verified := verify_rebooking(topic)):
+            out.append(verified)
+    return out
 
 
 def _cards_for_topic(topic: dict, dry_run: bool) -> dict[str, str]:
@@ -553,33 +588,43 @@ def _draft_visual_posts(
     dry_run: bool,
     scheduled_topics: list[dict],
     carousel_only: bool = False,
+    carousel_slot: datetime | None = None,
     skill_graph: str = "",
     news_posts: list[dict] | None = None,
 ) -> int:
     """Draft up to ``want`` graphic-led or video-led posts. Returns how many landed.
 
     Two kinds, in order: the tour carousel (**one** post covering every touring
-    act, per client direction 2026-08-03) and then one clip per act. So a floor
-    of 2 comes back as the carousel plus a clip. Acts already scheduled this run
-    are skipped, and each type carries a period-stamped dedup key: the carousel
-    once a week, a clip once a quarter per act.
+    act, per client direction 2026-08-03) and then one clip per act. Acts already
+    scheduled this run are skipped, and each type carries a period-stamped dedup
+    key: the carousel once a **month**, a clip once a quarter per act.
 
     ``slots`` are the week slots still open. When they run out the remaining
     posts are queued with no fixed time: this is a floor the client asked for,
     so a full week is a reason to queue behind it, not to skip it.
+
+    ``carousel_slot`` overrides the slot for the carousel only, and when it is
+    given the carousel consumes none of ``slots``. That is what makes the
+    carousel an addition to the week's normal drafts rather than a competitor
+    for one of their slots (client direction 2026-08-19).
     """
     if want <= 0:
         return 0
     now = datetime.now(_EASTERN)
-    week = now.strftime("%G-W%V")
+    month = now.strftime("%Y-%m")
     quarter = f"{now.year}Q{(now.month - 1) // 3 + 1}"
     taken = {t.get("_act", "") for t in scheduled_topics}
 
     # The tour carousel is ONE post covering every touring act, so it is a single
     # candidate rather than one per act.
+    #
+    # Month-stamped since 2026-08-19: weekly was too often, "too many carousel
+    # posts like that will get old" (client). The stamp is the whole mechanism,
+    # no calendar check is needed. The first run of a month finds no key for it
+    # and drafts it; every later run that month is a no-op.
     candidates: list[dict] = []
-    if f"tourcarousel_{week}" not in used:
-        if (carousel := _tour_carousel_topic(artists, period=week)):
+    if f"tourcarousel_{month}" not in used:
+        if (carousel := _tour_carousel_topic(artists, period=month)):
             candidates.append(carousel)
 
     # Clips are per act and cost an ffmpeg run over the network, so stop as soon
@@ -596,10 +641,18 @@ def _draft_visual_posts(
             candidates.append(t)
 
     drafted = 0
+    slot_i = 0  # week slots consumed. The carousel takes its own, so it is not one.
     for topic in candidates:
         if drafted >= want:
             break
-        slot = slots[drafted] if drafted < len(slots) else None
+        # The carousel goes out on Tuesday whatever else the week holds (client
+        # direction 2026-08-19). The scheduled run is Monday, so Tuesday is the
+        # morning after: a date that moves between the draft and the post can
+        # still be caught by a human, which a slot later in the week cannot
+        # promise. It also means the carousel never takes a slot the ranked pool
+        # was going to use.
+        own_slot = carousel_slot if topic["hook_type"] == "tour_poster" else None
+        slot = own_slot or (slots[slot_i] if slot_i < len(slots) else None)
         is_video = bool(topic.get("_video_path"))
         media = topic.get("_video_path") or topic.get("_image_paths") or []
         if isinstance(media, str):
@@ -608,7 +661,7 @@ def _draft_visual_posts(
         if not urls:
             log.warning("Visual: could not host %s, skipping", topic.get("headline", ""))
             continue
-        booking = config.STEVE_CALENDAR_LINK or config.LP_HOMEPAGE
+        booking = config.BOOKING_EMAIL
 
         posted = False
         for platform in _platforms_for(topic["hook_type"]):
@@ -620,7 +673,7 @@ def _draft_visual_posts(
                         topic,
                     )
                     if platform == "instagram"
-                    else f"{topic['_text']}\n\n{_BOOKING_ASK} {booking}")
+                    else f"{topic['_text']}\n\n{_BOOKING_ASK} {booking}.")
             if post_draft_to_buffer(
                 text, profile_id, platform=platform, dry_run=dry_run,
                 scheduled_at=slot,
@@ -658,6 +711,8 @@ def _draft_visual_posts(
         used.add(topic_key(topic))
         scheduled_topics.append(topic)
         drafted += 1
+        if not own_slot:
+            slot_i += 1
 
     if drafted < want:
         log.warning(
@@ -1474,11 +1529,14 @@ def main(
         when the week has no slot left: the extras queue behind the schedule
         rather than being dropped.
 
-        Two parts. The tour carousel is drafted every week in its own right, not
-        only when the floor is short (client direction 2026-08-03: "a post like
-        that is drafted once a week"); its week-stamped dedup key is what keeps it
-        to one, so a second run in the same week is a no-op. Then the floor tops
-        up whatever is still missing from the sources that need no story to
+        Two parts. The tour carousel is drafted in its own right, not only when
+        the floor is short, and since 2026-08-19 it is **monthly** rather than
+        weekly ("too many carousel posts like that will get old"). Its
+        month-stamped dedup key is the whole mechanism, so the first run of a
+        month drafts it and every later run that month is a no-op. It is an
+        addition to the week's normal drafts, not one of them: it takes its own
+        Tuesday slot and does not count toward the visual floor. Then the floor
+        tops up whatever is still missing from the sources that need no story to
         exist: the tour dates sheet and the agency's own Vimeo library.
 
         Skipped in single-artist mode (a targeted run, not a week's content) and
@@ -1489,23 +1547,31 @@ def main(
             return
         visuals_done = True
 
-        used_slots = _draft_visual_posts(
+        # slots=[] and its own Tuesday: the carousel consumes none of the week's
+        # slots, so nothing else is displaced by it.
+        _draft_visual_posts(
             artists=artists,
             want=1,
-            slots=remaining_slots,
+            slots=[],
             used=used,
             buffer_profiles=buffer_profiles,
             dry_run=dry_run,
             scheduled_topics=scheduled_topics,
             carousel_only=True,
+            carousel_slot=get_week_slots()[0],
             skill_graph=skill_graph,
             news_posts=news_posts,
         )
-        remaining_slots = remaining_slots[used_slots:]
 
         if not config.VISUAL_MIN_PER_WEEK:
             return
-        already = sum(1 for t in all_new_topics + scheduled_topics if t.get("_visual"))
+        # The carousel is deliberately not counted. It is an extra on top of the
+        # week's normal drafts, so letting it satisfy the floor would mean a
+        # month with a carousel quietly gets one fewer clip or stat card.
+        already = sum(
+            1 for t in all_new_topics + scheduled_topics
+            if t.get("_visual") and t.get("hook_type") != "tour_poster"
+        )
         shortfall = config.VISUAL_MIN_PER_WEEK - already
         log.info(
             "Visual floor: %d of %d visual post(s) so far",
@@ -1700,7 +1766,9 @@ def main(
             _run_phase(
                 _fill_with_topics,
                 label="Re-booking",
-                topics=fetch_rebookings(mappings),
+                topics=_verified_rebookings(
+                    fetch_rebookings(mappings), config.REBOOKING_MAX_PER_RUN
+                ),
                 artist_urls=artist_urls,
                 max_items=config.REBOOKING_MAX_PER_RUN,
             )
@@ -1884,7 +1952,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force",
         action="store_true",
-        help="With --tour-carousel: draft it again even though one already went out this week",
+        help="With --tour-carousel: draft it again even though one already went out this month",
     )
     args = parser.parse_args()
 
@@ -1907,22 +1975,24 @@ if __name__ == "__main__":
         artists = fetch_airtable_artists()
         profiles = {} if args.dry_run else discover_buffer_profiles()
         drafted: list[dict] = []
-        # The carousel is week-stamped so the weekly run cannot draft two. When
-        # the slides themselves have changed (a render fix, new dates), --force
-        # is how you re-draft in the same week. Delete the superseded Buffer
-        # draft by hand, since this one has no way to know which it replaced.
-        week_used = set() if args.force else read_used_topics()
+        # The carousel is month-stamped so the scheduled runs cannot draft two in
+        # a month. When the slides themselves have changed (a render fix, new
+        # dates), --force is how you re-draft inside the same month. Delete the
+        # superseded Buffer draft by hand, since this one has no way to know
+        # which it replaced.
+        month_used = set() if args.force else read_used_topics()
         carousel_news: list[dict] = []
         n = _draft_visual_posts(
-            artists=artists, want=1, slots=[], used=week_used,
+            artists=artists, want=1, slots=[], used=month_used,
             buffer_profiles=profiles, dry_run=args.dry_run,
             scheduled_topics=drafted, carousel_only=True,
+            carousel_slot=get_week_slots()[0],
             skill_graph=load_skill_graph(), news_posts=carousel_news,
         )
         if carousel_news:
             publish_news_posts(carousel_news, dry_run=args.dry_run)
-        # Record it, so the weekly phase in main() does not draft a second one
-        # in the same week.
+        # Record it, so the visual phase in main() does not draft a second one
+        # in the same month.
         mark_topics_used(drafted, dry_run=args.dry_run)
         sys.exit(0 if n else 1)
 
@@ -1952,14 +2022,26 @@ if __name__ == "__main__":
 
     if args.test_rebookings:
         config.load_env()
-        rebookings = fetch_rebookings(load_artist_mappings())
-        if not rebookings:
+        # Two lists, because they answer different questions. The raw pairings
+        # are what Airtable holds; the verified ones are what a post may
+        # actually claim, and only the strongest few are verified here for the
+        # same reason a run does not verify them all: each unproven date costs a
+        # search. Per-date evidence is logged at INFO.
+        raw = fetch_rebookings(load_artist_mappings())
+        if not raw:
             print("No act/venue pairing has more than one fully-executed contract.")
-        else:
-            print(f"Re-booked act/venue pairings ({len(rebookings)}), strongest first:")
-            for t in rebookings:
-                print(f"  [{t['_rebooking_count']}x] {t['headline']}")
-                print(f"        key: {t['sheet_key']}")
+            sys.exit(0)
+        print(f"Re-booked act/venue pairings in Airtable ({len(raw)}), strongest first:")
+        for t in raw:
+            print(f"  [{t['_rebooking_count']}x] {t['headline']}")
+            print(f"        key: {t['sheet_key']}")
+        want = config.REBOOKING_MAX_PER_RUN
+        print(f"\nVerified against published sources (top {want}, "
+              f"what a run would post):")
+        for t in _verified_rebookings(raw, want):
+            print(f"  [{t['_rebooking_count']}x] {t['headline']}")
+            for src in (t.get("_venue_history") or {}).get("sources", []):
+                print(f"        source: {src}")
         sys.exit(0)
 
     if args.test_buffer:

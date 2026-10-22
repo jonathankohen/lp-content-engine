@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       LP News
  * Description:        Creates standard WordPress news posts (draft) from the LP Content Engine weekly run. Each post gets a featured image, body, category, and a red "Read more" button linking to the source.
- * Version:           1.1.1
+ * Version:           1.3.0
  * Author:            Love Productions
  * License:           GPL-2.0-or-later
  * Requires at least: 5.8
@@ -30,7 +30,7 @@ if (! defined('ABSPATH')) {
 	exit; // No direct access.
 }
 
-define('LP_NEWS_VERSION', '1.1.1');
+define('LP_NEWS_VERSION', '1.3.0');
 define('LP_NEWS_OPTION_SECRET', 'lp_news_secret');
 // ID of a post configured with the desired theme "Page settings"
 // (Header/Footer/Sidebar/Layout/etc.); its meta is copied onto every new post.
@@ -42,6 +42,57 @@ define('LP_NEWS_OPTION_TEMPLATE', 'lp_news_template_post_id');
 // misbehaving or hostile caller cannot fill the disk one piece at a time.
 // A 15-second 1080x1080 clip is about 6MB, so 64MB is generous.
 define('LP_NEWS_MAX_UPLOAD_BYTES', 64 * 1024 * 1024);
+
+/* -------------------------------------------------------------------------- *
+ *  LP Content dashboard (1.2.0)
+ * -------------------------------------------------------------------------- *
+ *  A staff-facing admin screen: the Buffer social queue (drafts / queued /
+ *  sent), the website news posts in the same three states, a Claude-powered
+ *  assistant scoped to drafts and the queue, and Facebook analytics.
+ *
+ *  Loaded from includes/ rather than inlined here, because this file is already
+ *  long. Each require is GUARDED: this plugin is deployed by uploading files to
+ *  a live site, and a partial upload must degrade to "the dashboard is missing"
+ *  rather than to a fatal error that takes loveproductions.com down.
+ * -------------------------------------------------------------------------- */
+
+$lp_dash_includes = array(
+	'lp-dash-settings.php',
+	'lp-dash-buffer.php',
+	'lp-dash-articles.php',
+	'lp-dash-analytics.php',
+	'lp-dash-claude.php',
+	'lp-dash-compose.php',
+	'lp-dash-page.php',
+);
+$lp_dash_missing = array();
+foreach ($lp_dash_includes as $lp_dash_file) {
+	if (! file_exists(plugin_dir_path(__FILE__) . 'includes/' . $lp_dash_file)) {
+		$lp_dash_missing[] = $lp_dash_file;
+	}
+}
+if (empty($lp_dash_missing)) {
+	// All or nothing. Loading a subset would fatal on the first call into a
+	// file that did not arrive, which is exactly the outcome this guard exists
+	// to prevent.
+	foreach ($lp_dash_includes as $lp_dash_file) {
+		require_once plugin_dir_path(__FILE__) . 'includes/' . $lp_dash_file;
+	}
+} else {
+	// Say so loudly in the admin instead of failing silently: a half-uploaded
+	// plugin folder otherwise just looks like the dashboard "not appearing".
+	$GLOBALS['lp_dash_missing_files'] = $lp_dash_missing;
+	add_action('admin_notices', function () {
+		if (! current_user_can('manage_options')) {
+			return;
+		}
+		echo '<div class="notice notice-error"><p><strong>LP News:</strong> the dashboard files are missing from '
+			. '<code>includes/</code>: <code>'
+			. esc_html(implode('</code>, <code>', $GLOBALS['lp_dash_missing_files']))
+			. '</code>. Re-upload the whole plugin folder.</p></div>';
+	});
+}
+unset($lp_dash_includes, $lp_dash_missing, $lp_dash_file);
 
 /**
  * The only categories this endpoint will ever apply. Names in the payload that

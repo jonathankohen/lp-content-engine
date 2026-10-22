@@ -45,6 +45,8 @@ All of these are env-overridable; the code defaults are the intended production 
 | --- | --- | --- | --- |
 | `MAX_SHOWS_PER_WEEK` | 3 | cap | Show announcements a week, Airtable shows and gig-date news together |
 | `REBOOKING_MAX_PER_RUN` | 2 | cap | Re-booking posts per run |
+| `VENUE_HISTORY_MIN_COUNT` | 3 | switch | Non-zero enables the act's-own-page date lookup behind a re-booking count; 0 turns it off |
+| `DATE_CHECK_MAX_SEARCHES` | 8 | cap | Dates one run may spend a web search on to corroborate a re-booking |
 | `COST_CAP_USD` | $5.00 | cap | Claude spend per run |
 | `CLAUDE_CALL_LIMIT` | 50 | cap | Claude calls per run |
 | `VISUAL_MIN_PER_WEEK` | 2 | **floor** | Posts led by a graphic or video we made |
@@ -57,7 +59,8 @@ All of these are env-overridable; the code defaults are the intended production 
 Not env vars but the same kind of rule: 7 week slots (`get_week_slots()`), no act more than twice
 consecutively (`_select_with_diversity`), a 0.40 score floor on news topics, 2+ bookings for a
 re-booking stat card, an act spotlight once per act per quarter, a clip once per act per quarter,
-the tour carousel once per week, and one agency-proof post per quarter.
+the tour carousel once per **month** (on its own Tuesday slot, and not counted toward the visual
+floor), and one agency-proof post per quarter.
 
 ## Setup
 
@@ -77,7 +80,7 @@ python main.py --artist "Concert of Kings"  # single artist
 python main.py --test-calendar              # print upcoming shows from Airtable calendar and exit
 python main.py --test-rebookings            # print act/venue pairings with 2+ FE contracts and exit
 python main.py --test-analytics             # print top-performing Buffer posts with engagement scores and exit
-python main.py --tour-carousel [--dry-run] [--force]  # draft the "tours on sale now" carousel (one tour-date slide per act); --force re-drafts it in a week that already had one (delete the superseded Buffer draft by hand)
+python main.py --tour-carousel [--dry-run] [--force]  # draft the "tours on sale now" carousel (one tour-date slide per act); --force re-drafts it in a month that already had one (delete the superseded Buffer draft by hand)
 python main.py --test-clips [--artist NAME] # cut a short Vimeo clip per act for review, then exit
 python main.py --visual-count N [--dry-run]  # visual-only mode: N graphic/video posts, queued (1 Claude call each, for the website article)
 
@@ -109,6 +112,8 @@ python clean_up.py --apply  # delete expired show drafts
 | `lp/cards.py`                                | `render_quote_card()`, `render_stat_card()`, `render_tour_card()`, `render_tour_poster()`, Pillow-rendered branded image cards                                                                                       |
 | `make_tour_posters.py`                       | Standalone CLI: renders a tour poster per act from key art + the tour dates sheet. See "Generated tour posters"                                                                                                     |
 | `lp/stats.py`                                | `agency_stats()`, `rebooking_stat()`, `act_credential_stats()`, verified hard numbers for stat cards                                                                                                                |
+| `lp/venue_history.py`                        | `venue_history()`, counts an act's dates at one venue from the act's **own** published date list (plus Wayback snapshots of it), to raise a re-booking count past Airtable's 2023 floor |
+| `lp/date_check.py`                           | `verify_rebooking()`, `corroborate_dates()`, settles what a re-booking post may claim: every date must be provable outside Airtable |
 | `lp/artist_links.py`                         | `ARTIST_PAGE_URLS` static roster map + `lookup_artist_url()`, prepopulated `/title-item/` page links so `artist_url` never blanks at runtime                                                                        |
 | `content-skill-graph/`                       | Knowledge base loaded as Claude's system prompt at generation time                                                                                                                                                   |
 | `content-skill-graph/index.md`               | Master index + execution instructions for content generation                                                                                                                                                         |
@@ -127,7 +132,7 @@ python clean_up.py --apply  # delete expired show drafts
 **Skill-graph rewrite (2026-07-31).** After the client rejected a post as "so AI" (see "IN PROGRESS" below), the graph was reworked rather than patched. What changed:
 - **New file `voice/reference-posts.md`, and it is the most important file in the graph.** It holds the rejected post verbatim with a six-point diagnosis of why it failed, a rewritten version, and the Reliant Talent Agency post the client asked us to imitate (17 words over a 7-slide carousel). Rules describe; worked examples calibrate. `index.md`, `humanizer.md` and `linkedin.md` all point at it.
 - **LinkedIn length dropped from 500-700 characters to 200-300 characters of copy** (the booking link does not count toward the budget), hard ceiling 400, two or three sentences. Changed in `linkedin.md`, `platform-tone.md`, `repurpose.md` and the `generate_posts()` prompt together, so nothing contradicts.
-- **The LinkedIn CTA is now Steve's calendar link, not the info@ email** (client direction). `generate_posts()` injects `config.STEVE_CALENDAR_LINK` via `booking_cta_instruction`, since the model cannot use a URL it was never given; the graph only describes the rule. Falls back to the email when the env var is unset.
+- **The LinkedIn CTA was switched to Steve's calendar link here, and switched back to the info@ email on 2026-08-18.** See "The booking contact on social is the email again" below; this bullet is history.
 - **`index.md` rewritten.** It was badly stale (still advertised LinkedIn at 1,300-2,000 characters and claimed shows bypass scoring). It now opens with three override rules: short, one hard fact up front, and the graphic carries the message.
 - **`humanizer.md` gained a "Length is the loudest tell" section** placed above every other pattern, plus entries for "the kind of X that Y" and claims dressed as evidence, with the rejected post's two symmetrical constructions quoted as the worked example.
 - **`buyers.md` gained a "How NOT to talk to them" section** (they work in live entertainment; do not explain the business to them) and its content list now matches what the engine actually produces, with post-show recaps explicitly marked as deliberately not produced.
@@ -154,7 +159,10 @@ python clean_up.py --apply  # delete expired show drafts
 
 **Artist names are exact.** The `artists.md` table maps tribute act names exactly as they appear in Airtable. Claude searches for the exact name, do not paraphrase. "Concert of Kings" (not "Elvis: The Concert of Kings"). Priscilla Presley is a separate act from Concert of Kings. **Note:** Airtable still has the old name "Elvis: The Concert of Kings", needs to be updated there too for the mapping to work correctly.
 
-**Expired draft cleanup.** `purge_expired_show_drafts()` lives in `lp/buffer.py` but is **commented out** at the top of `main()` in `main.py`. It detects show announcement drafts with past dates and deletes them. Uncomment when ready, always test with `--dry-run` first. The same logic is active (not commented out) in `clean_up.py --purge-expired`.
+**Expired draft cleanup.** `purge_expired_show_drafts()` lives in `lp/buffer.py` and **runs** at the top of `main()` in `main.py` (the note that it was commented out was stale). It detects show announcement drafts with past dates and deletes them. The same logic is active in `clean_up.py --purge-expired`. **It deletes without confirmation, so a date it misreads is work destroyed**; test with `--dry-run` after any change to date parsing.
+
+- **A bare, year-less date used to be read as this year's, and it deleted live drafts (fixed 2026-08-19).** `strptime` returns 1900 for "January 14th", and `_extract_earliest_date()` pinned that to the current year. So on 2026-08-19 two Arrival drafts announcing January 14-16 **2027** shows read as 2026-01-14, seven months expired, and the purge deleted both. Not recoverable: Buffer's delete is hard and the posts were gone from every status.
+- **The fix rolls a bare date forward only when it is far enough back**, `_BARE_DATE_PAST_DAYS` (60). Rolling every past-looking bare date forward would be worse than the bug: the near-past case ("August 5th" seen on August 19) is the whole reason the purge exists, and it would stop firing on bare dates entirely. Sixty days keeps that working while reading a date two seasons "past" as one still to come.
 
 **Dry run output.** `main.py --dry-run` prints full post text (not truncated) with scheduled slot per post. Safe to run to preview output without writing to Sheets or Buffer.
 
@@ -208,7 +216,29 @@ python clean_up.py --apply  # delete expired show drafts
       - Drafted to Buffer as a 10x re-booking post on 2026-08-06 (three drafts, all channels, with a `10x` stat card). The topic was hand-built, since none of these dates are in Airtable.
     - **No other act publishes an archive.** A1A has photo galleries by year but no date list, kisstheskytribute.com answers 406 (mod_security), monkeemen.com 403 (Cloudflare).
     - **The public gig databases cannot support a count.** setlist.fm is fan-submitted and badly undercounts: Arrival From Sweden has 82 setlists there against "almost 140 USA tours" on its own site, and its highest venue tally is **3** (Durham PAC, Fargo Theatre, One World Theatre). Bandsintown 403s server-side, as does Ticketmaster with 401, both already documented above.
-    - **So there is no engine feature here**, only one hand-verifiable fact. The scalable fix is the missing data, not scraping: see the open question about where pre-2023 booking history lives.
+    - **This conclusion was overtaken on 2026-08-17: there IS an engine feature, it is `lp/venue_history.py`, and this section describes how *not* to build it.** The mistake was searching the open web for pairings, which is why it found one act and did not generalise. Parsing the act's own published date list does generalise, and it reproduces this Free Fallin finding exactly (Le Musique, Pioneer Place and Equity Hall all come out right, and the Le Musique count is actually 12, see the re-booking notes above). Everything the sweep concluded about fan databases and summarisers still holds and is why the new module refuses to use either. **Still do not re-run the open-web sweep.**
+  - **No re-booking number goes out on Airtable alone (client direction 2026-08-18). `lp/date_check.py`.** Airtable is the agency's own contract record, which makes it the right place to *find* a re-booking and the wrong place to *prove* one: a signed contract is not evidence the night happened. So every date behind a published count has to be demonstrable somewhere else, and any date that is not is dropped from the count. Under two surviving dates and the pairing is skipped entirely.
+    - **Three tiers of evidence, every one checked in code.** (1) The act's own published listings including Wayback, via `venue_history()`, free and covering most of what we post. (2) A cited page we fetch and find the date printed on (`verify_date_on_page()` in `lp/scrape.py`). (3) A cited URL that spells the date out in its path (`url_encodes_date()`), the one concession to ticket pages that are JavaScript-rendered or bot-blocked.
+    - **The search only ever finds pages; it never returns a verdict.** `search_date_citations()` in `lp/ai.py` asks Haiku for source URLs and is explicitly told not to judge. A model asked "is this date real" says yes, and a model asked to read a tour page invented a date and dropped a real one (see the Free Fallin sweep below). Same split as testimonials: model finds, code verifies.
+    - **Fails closed.** An unreachable page, a paywall or a 403 is not proof. That is a deliberate cost: the first live check dropped the Concert of Kings / New Barn Theater pairing outright because its only citations were an etix page that will not serve us and a vividseats listing for a different date.
+    - **Verification is lazy and bounded.** `_verified_rebookings(topics, want)` in `main.py` walks the pairings strongest-first and stops once `REBOOKING_MAX_PER_RUN` survive, so a run never verifies all 36. `DATE_CHECK_MAX_SEARCHES` (8) caps the rest, since a `web_search` call measured **~$0.15**, roughly ten times an ordinary Haiku call, and `COST_CAP_USD` is $5. Verdicts are cached under `cache/date-checks/`, **negatives included**: a date nobody published is not going to become published, and re-searching it weekly costs a call for the same no.
+    - **`enrich_rebooking()` is gone**; `verify_rebooking()` now owns the whole number, up and down.
+  - **Counts are now raised from the act's own published date list (`lp/venue_history.py`, 2026-08-17).** This is the answer to "the client wants bigger numbers", and it is a real fix rather than a stretch: Airtable's `Weekly LPC Central` starts in 2023, so a venue that has brought an act back since 2016 reads as 3x. `_with_venue_history()` in `main.py` runs on every re-booking topic at `VENUE_HISTORY_MIN_COUNT` (default 3) and above, which is where a stat card gets made. Results are cached on disk under `cache/venue-history/`.
+    - **The only source is the act's own page, and `ACT_TOUR_PAGES` is an allowlist.** An act that is not in it returns None and keeps Airtable's count. This fails closed exactly like `verify_quote_on_page()` and `ACT_INSTAGRAM`, and for the same reason: a wrong number goes out under the agency's name. The two rejected alternatives are already documented above, fan databases undercount badly (setlist.fm has Arrival at 82 shows against its own site's ~140 tours) and **a model asked to count rows invents dates**.
+    - **The count never goes down.** A published tour page can be incomplete: The Rocket Man Show's own archive is missing a March 2024 Agua Caliente date LP holds a contract for. So the two sources are both floors, and the web count is used only when it beats Airtable's.
+    - **Postponed and cancelled rows are dropped** (`_DEAD_ROW_RE`). Arrival's archive still lists its two COVID-era Arlington dates, both marked, and counting them would have turned a true 7 into a false 9.
+    - **A row ends at the next date, not after a fixed number of characters.** The first version took a flat 200-character window, so every date listed the night before an Arlington show counted as an Arlington show and 7 came out as 20. Relatedly, `_BARE_DAY_RE` makes the ordinal suffix optional: one unrecognised "Dec 02" is not a missing row, it is a *wrong* one, because the row above then runs on until the next date it does recognise.
+    - **Pages that put the year in a section heading are handled** (Free Fallin's tour history reads "2024" and then "April 25th - Le Musique Room"). A bare month and day inherits the nearest year printed above it.
+    - **Three bugs found on 2026-08-18 while checking one claim by hand, all of which made counts come back short.** Each is the same class of failure: a miss that looks exactly like "this act has no history".
+      - **A `"paged"` archive never walked Wayback**, only `"upcoming"` did. The Rocket Man Show's own archive no longer lists the March 2024 Agua Caliente date it was advertising in February 2024, and that snapshot is the only published proof of a date LP holds a contract for. Paged archives drop rows; they get the Wayback walk too now.
+      - **A page that prints no year at all was skipped entirely.** The first page of a Bandzoogle calendar reads "Friday, April 24 @ 7:30PM" because everything on it is upcoming. The weekday recovers the year and checks itself: only one year in a three-year window puts April 24 on a Friday, and an ambiguous one is not guessed.
+      - **The same venue billed two ways counted as two venues**, the Le Musique lesson again: "Agua Caliente Casino" on one page, "Agua Caliente Resort" on the next. `_venue_matches()` now falls back to the identifying tokens, which must appear together and in order. **A one-token core falls back to the full name**, because "Carolina Opry" reduces to "carolina" and matched every row in North Carolina, turning a true 11 into 15.
+      - Together these took The Rocket Man Show at Agua Caliente from 1 verified date to all 3, matching Airtable exactly.
+    - **Cancelled beats announced, whichever page says so.** Skipping a dead row where it is found is not enough once Wayback is in the mix, and reaching further into the archive is what made it bite. Arrival's previous-shows page marks its 2020-07-26 Carolina Opry date CANCELLED and its 2021-03-07 and 2022-02-20 dates postponed, but a 2020 snapshot of its *upcoming* page announced all three with no marker, and the snapshot put them straight back: 14 where the hand-checked answer is 11. Dead dates are now collected across every page read and removed at the end. An announcement is not evidence a night happened; a cancellation notice is evidence it did not.
+    - Note the allowlist entry `themusicofabba.com/previous-shows/` **redirects** to `/tourtickets/previous-shows/` and `requests` follows it, so both URLs read the same page. It is not a stale link.
+    - **`_wayback_snapshots()` failing silently was part of that too.** web.archive.org refuses TLS from some networks while serving the same path over http, and it throttles hard; either way an empty snapshot list reads as "nothing archived". `_get()` now retries in the clear and the empty result is logged as a warning.
+    - **Verified against every count that could be checked by hand:** Arrival at Arlington Music Hall 7x and Free Fallin at Pioneer Place 5x both match exactly. Free Fallin at Le Musique comes out at **12, not the 10 recorded above**; the earlier hand count started at 2019 and missed 2017-12-02 and 2018-12-01. All 12 occurrences on the page are real dated rows.
+    - **What it found on real data (2026-08-17):** The Carolina Opry has booked Arrival From Sweden **11 times** (2018 to 2026), Arlington Music Hall **7x**, Dosey Doe **6x**. Those were 3x each in Airtable. Inspect with `python main.py --test-rebookings`, which now prints enriched counts and logs every contributing date at INFO.
   - **`MAD/Multiple Dates` is not counted.** 79 fully-executed rows carry one, and a few hold several dates in one string ("August 28, 2026, September 12, 2026, November 12, 2026, ..."), so those pairings are undercounted. The field is free text and parsing it would risk inventing a count, which is the one thing a hard-number post cannot do.
 - **Testimonials.** `search_testimonials()` asks Haiku for a genuine published quote (venue, promoter, buyer, or a real review) and returns `[]` far more often than not, which is the intended behavior. **Anti-fabrication is enforced in code, not in the prompt:** any item missing `quote`/`url`/`attribution` is dropped, and the surviving quote must be found on the cited page by `verify_quote_on_page()` in `lp/scrape.py` (normalizes case, smart quotes, dashes and whitespace, then matches the first 40 characters). It fails closed, so an unreachable page or a paywall drops the testimonial. The verified quote and its attribution are folded into `summary` so `generate_posts()` builds the post on them, and `hooks.md` forbids altering anything inside the quotation marks.
 - **Act spotlights.** Evergreen, no search call. `fetch_page_prose()` pulls the `<p>` copy from the act's own loveproductions.com page (paragraph extraction, not whole-page text, so nav and footers stay out; paragraphs under 60 chars are dropped as chrome), which becomes the `summary`. Returns `None` if the page yields under 200 chars. The act page URL comes from `artist_url`, guaranteed non-blank by the static map in `lp/artist_links.py`.
@@ -281,6 +311,141 @@ python clean_up.py --apply  # delete expired show drafts
 - **Tab matching.** The sheet's tab names drift from the roster's ("The Dolly Show" against "Dolly Show, The", "Concert of Kings" against "Elvis: The Concert of Kings"). `match_tab()` tries exact slug, then containment, then a word-subset comparison with the leading article dropped. The subset step requires every sheet word to appear in the act name so "Legends of Pop" cannot claim the "Legends of Classic Rock" tab.
 - **Not yet wired into `main.py`.** These render to disk only. Posting them needs `upload_media()` for hosting and a decision on cadence. `_draft_tour_carousel()` in `main.py` already posts the *other* format (`render_tour_card()`, dates over a darkened act photo, one slide per act as a carousel), which is a separate thing modelled on the Reliant Talent post the client sent.
 
+## LP Content dashboard (WordPress admin, plugin 1.3.0, 2026-08-19)
+
+A staff-facing admin screen inside the LP News plugin: **LP Content** in the WordPress sidebar,
+six tabs. Built because staff had no way to see the week's content without a Buffer login and a
+WordPress login, and no way to fix a draft without one of us.
+
+**Files.** `wordpress-plugin/lp-news/includes/`, seven of them: `lp-dash-settings.php` (credentials,
+capability, audit log), `lp-dash-buffer.php` (Buffer GraphQL), `lp-dash-articles.php` (WP posts),
+`lp-dash-analytics.php` (Meta Graph), `lp-dash-claude.php` (the assistant), `lp-dash-compose.php`
+(the Compose tab), `lp-dash-page.php` (UI).
+`lp-news.php` requires them **all or nothing**: a partial upload shows an admin notice naming the
+missing files instead of fataling a live site. **Deploy the whole folder, not just `lp-news.php`.**
+
+**Tabs.** Social queue (Buffer drafts / queued / sent), Website posts (draft+pending / future /
+publish), Compose, Assistant, Analytics, Settings.
+
+### Compose (plugin 1.3.0, 2026-08-27)
+
+One brief plus an optional image, three social drafts out: LinkedIn, Instagram and Facebook, each
+editable before anything is written. `lp-dash-compose.php`, its own tab and its own
+`lp_dash_compose` nonce.
+
+**It is deliberately not part of the Assistant tab.** The assistant's safety story is its tool list,
+and "no tool creates, publishes or sends" has to stay literally true. Composing is a different act,
+so it lives elsewhere and is unreachable from the chat loop. What Compose still cannot do is
+approve: every draft it writes is `saveToDraft: true`, and sending is still a button on the Social
+queue tab. Writes land in the audit log as `human:compose_draft`.
+
+Three AJAX steps, deliberately not one button:
+
+| Step | Endpoint | What it does |
+| --- | --- | --- |
+| Upload | `lp_dash_compose_upload` | `media_handle_upload()` into the media library, gated on `upload_files`. **Buffer fetches assets by URL, so the media library IS the hosting** and it has to be publicly reachable: on a staging or password-protected site the drafts are created but the image does not attach. |
+| Draft | `lp_dash_compose_draft` | One Anthropic call, **no tools**, `lp_dash_compose_system_prompt()` = the shared prompt plus composing rules. Returns JSON `{linkedin, instagram, facebook, notes}`; `lp_dash_compose_parse()` also survives a code fence or a preamble. |
+| Create | `lp_dash_compose_create` | `lp_dash_buffer_create()` per ticked channel. **Reported per channel**: Buffer has no transaction across three `createPost` calls, so a partial success is a real outcome and must not be reported as failure. |
+
+- **The image is sent as base64, not as a source URL.** Anthropic would otherwise have to reach the
+  media library itself, which is false on a staging site and fails as a confusing API error rather
+  than as "no image". `lp_dash_compose_image_block()` prefers the already-generated `large`
+  intermediate (a phone photo blows past the ~5MB image cap) and **reads the mime from the bytes
+  with no fallback to the stored one**: bytes GD cannot read are bytes Anthropic cannot read either.
+- **Video is attached but never sent to Claude.** The Messages API takes images, not mp4. The prompt
+  says a clip is attached and tells it not to describe footage it was not shown.
+- **`lp_dash_buffer_create()`** is the port of `post_draft_to_buffer()` in `lp/buffer.py` and carries
+  the same per-network rules: `assets` is a LIST, Facebook `type: post` (there is no `video` member),
+  Instagram `reel` for video and `post` for an image, both `shouldShareToFeed`. Instagram with no
+  media is refused in PHP before Buffer sees it, with a message staff can act on.
+- **`lp_dash_buffer_channels()`** is the port of `discover_buffer_profiles()`: `ChannelsInput` wants
+  `organizationId`, first channel per service wins, cached 12h and flushed on a settings save.
+
+### Approving and publishing, which is a human action
+
+Buttons on the Social queue and Website posts tabs, handled by `lp_dash_handle_action()`. Each is a
+nonce-protected POST form (**not a link**: a link that publishes can be fired by a prefetch or by
+anything that follows it), gated on `lp_dash_publish_capability()`, which defaults to
+`lp_dash_capability()` and is separately filterable so staff can be allowed to *see* the dashboard
+without being able to push anything live. Every action is written to the audit log as
+`human:<action>` with the user who clicked.
+
+| Button | What it does |
+| --- | --- |
+| Approve | Draft to queued, at a definite future time (`saveToDraft` false, `customScheduled`) |
+| Send now | Publishes immediately, `ShareMode` `shareNow`, confirm dialog |
+| Back to draft | Queued to draft, keeping the time so re-approving restores it |
+| Publish / Publish now | Article to `publish`; a `future` post also gets its date brought forward |
+| Schedule | Article to `future` at a chosen time |
+| Back to draft | Article to `draft`, and this one **works on a published post**, the "we should not have sent that" button |
+
+- **Approve never guesses a time.** A draft whose slot has already passed, or has no slot, is
+  refused and offered a date picker instead. Two reasons: silently moving someone's post to a day
+  they did not choose is its own kind of wrong, and handing Buffer a stale time is precisely what
+  published three posts by accident on 2026-08-03.
+- **None of these is an assistant tool, and none may become one.** The split is the client's: Claude
+  tidies drafts, a person decides what goes live. `lp_dash_tools()` still returns exactly 7 tools and
+  the test suite asserts that no tool is named approve / send_now / publish_article, and that calling
+  one by that name is rejected as unknown.
+
+
+
+**Credentials live in WP options** (client direction 2026-08-19), edited on the Settings tab:
+`lp_dash_buffer_token`, `lp_dash_anthropic_key`, `lp_dash_meta_token`. A same-named constant in
+`wp-config.php` (`LP_DASH_BUFFER_TOKEN` etc.) always wins and the UI then shows the field as pinned
+rather than editable. The tradeoff is stated on the page: any admin can read them and they sit in
+database backups. Access is `manage_options`, widenable via the `lp_dash_capability` filter.
+
+**Buffer reads are cached for 120 seconds, and that is not a performance tweak.** Buffer enforces a
+hard 24h per-client cap that the weekly run shares, so a staff member holding down refresh could
+starve Monday's job. "Refresh from Buffer" busts the cache deliberately.
+
+### The assistant, and why it cannot do damage
+
+A tool-use loop against the Anthropic Messages API (`claude-opus-5`, overridable on Settings), raw
+HTTP through `wp_remote_post` rather than the PHP SDK, because the plugin is deployed by uploading a
+folder and there is no Composer step in that pipeline.
+
+**Safety is the tool list, not the prompt.** Seven tools: `list_social_posts`, `list_articles`,
+`read_article`, `update_social_post`, `delete_social_post`, `update_article`, `trash_article`.
+There is no tool that publishes, sends, approves, touches code, reads a credential or changes a
+setting, so no prompt can talk it into any of those. **Adding a tool is the only way to widen its
+reach.** Client direction 2026-08-19: edit, reschedule and delete drafts, never send.
+
+- **Every write re-checks the target's status in PHP**, ignoring whatever the model claimed. Buffer
+  writes are refused unless the post is `draft` or `scheduled`; article writes unless `draft`,
+  `pending` or `future`. A `sent` Buffer post and a published article are both untouchable.
+- **The 2026-08-03 publish incident is guarded in code.** `lp_dash_buffer_edit()` always sends
+  `saveToDraft` and always sends `dueAt`, and the one path where `saveToDraft` is false (keeping a
+  queued post queued) demands an explicit **future** time and refuses a past one.
+- **`trash_article` trashes rather than deletes**, so a misread instruction is recoverable. Buffer
+  has no trash, so `delete_social_post` is permanent and the tool description says so.
+- **Bounded**: `LP_DASH_MAX_TURNS` (8) stops a runaway loop inside a synchronous admin request,
+  `LP_DASH_MAX_TOKENS` (4096) caps a reply, conversation state is a per-user hour-long transient
+  trimmed to the last 24 messages.
+- **Every write is audited** to the `lp_dash_audit` option (ring buffer of 100: time, user, tool,
+  args, ok, error) and rendered under the assistant.
+- The system prompt carries only the rules that make a wrong answer publicly embarrassing (no em
+  dashes, the Elvis ban, not every act is a tribute, show-do-not-tell, the fixed IG and
+  LinkedIn/Facebook CTAs). It deliberately does **not** restate the skill graph: a stale copy of the
+  voice rules living in PHP would be worse than none.
+
+**Tested with `php -l` and a WordPress stub harness** (`scratchpad/test-dash.php`, 62 checks) that
+captures outbound requests instead of sending them: draft stays draft, queued stays queued, sent is
+refused, past-dated reschedule is refused, empty GraphQL payloads read as failure not success, the
+tool_result round trip is shaped right, refusal and turn-cap guards fire, approve refuses a passed or
+missing slot, `shareNow` carries no `dueAt`, and the assistant has no approve/publish tool.
+**Not yet run inside a real WordPress install.**
+
+### Analytics: Facebook only, and that is the honest answer
+
+Facebook engagement (reactions, comments, shares, and the same reactions+comments+shares score the
+engine ranks top performers by) via the Meta Graph API, cached 15 minutes, plus website post counts
+which need no API at all. **Instagram and LinkedIn render an explanation rather than an empty
+table**, because a zero there reads as "no engagement" when the truth is "no connection": the IG
+Page link is a UI-only operation deliberately abandoned on 2026-07-31, and LinkedIn API access was
+applied for and refused, so its numbers still come from the manual CSV export.
+
 ## IN PROGRESS: visual post types (2026-07-31)
 
 **Read this before starting work.** This section is the live state of an unfinished sprint. Update it as things land; do not wait for the end of a session.
@@ -318,7 +483,7 @@ All 134 Buffer drafts were deleted on 2026-07-31 to start clean. There is no dra
 - **LinkedIn is written to buyers only.** Not a mixed buyer/fan audience.
 - **The stated goal is follower growth**, not inbound enquiries. Jonathan's own view is that this is the wrong metric, but it is what the client asked for, so optimise for it.
 - **Length: 200 to 300.** Jonathan said "words", but every other signal says characters: the rejected post was about 180 words and the client called it far too long, and the model post he pointed to (below) is 15 words. **Treat 200-300 characters as the target and confirm before writing anything long.**
-- **The LinkedIn CTA is Steve's calendar link** (`STEVE_CALENDAR_LINK`), not `info@loveproductions.com`. This matches the website articles.
+- **The LinkedIn CTA was Steve's calendar link.** Reversed 2026-08-18, it is `info@loveproductions.com` on every social channel now; see below.
 - **Images are an add-on, not a requirement.** Card posts are one post type among several; text-only posts stay legitimate. Do not gate every post on having a graphic.
 - **Do not use Steve's own writing as a voice sample.** Explicitly rejected. The brand voice has to come from the published site copy and the examples below, not from client emails.
 - **What the client has liked:** the news posts tying tribute acts to their original artists (the Monkees conference and the new Tom Petty releases were both named). That is evidence for `tribute_news` and `original_artist_news`, the hook types already in the pipeline.
@@ -332,7 +497,7 @@ All 134 Buffer drafts were deleted on 2026-07-31 to start clean. There is no dra
 
 **Buffer carousels are supported (verified 2026-07-31).** Schema introspection confirms `CreatePostInput.assets` is typed `[AssetInput!]!`, a list. The long-standing single-dict form worked only because GraphQL coerces a lone value into a one-element list. `post_draft_to_buffer()` now takes `images: list[str]` alongside `image`, and attaches `[{image: {url}}, ...]`. Facebook also receives assets now **when a topic has no source URL to unfurl**; it still gets none otherwise, so its native link preview keeps working. `AssetInput` also has a `video` member (`VideoAssetInput`: `url`, `thumbnailUrl`, `metadata{title, thumbnailOffset}`), so video posting needs nothing beyond a public mp4 URL.
 
-**Tour carousel (`--tour-carousel`).** `_post_tour_carousel()` in `main.py` builds the Reliant-style post: one tour-date slide per act, Instagram gets the full carousel and Facebook the album. **LinkedIn gets the full carousel too (client direction 2026-08-04: the client asked specifically for this post type on LinkedIn).** It had been cut on 2026-08-03 on the reading that a poster of dates on sale is a show announcement whatever the artwork; the client's call outranks that, and a swipe through the whole roster is a busy-agency argument rather than a flyer for one night. Buffer accepted 8 slides on LinkedIn on a live run. Slides come from `render_tour_poster()` in `lp/cards.py` over `upcoming_tour_dates()` in `lp/sheets.py`. **The caption is hardcoded, not generated:** "Our acts are booked and busy. Swipe to see the tours on sale now." A model asked to write around a date list pads it straight back into the paragraphs the client rejected. Instagram gets the caption alone (captions do not linkify, so a 140-character booking URL is dead weight); Facebook gets a `Booking:` line with `STEVE_CALENDAR_LINK`. Verified on real data: 8 slides, 65-character Instagram caption.
+**Tour carousel (`--tour-carousel`).** `_post_tour_carousel()` in `main.py` builds the Reliant-style post: one tour-date slide per act, Instagram gets the full carousel and Facebook the album. **LinkedIn gets the full carousel too (client direction 2026-08-04: the client asked specifically for this post type on LinkedIn).** It had been cut on 2026-08-03 on the reading that a poster of dates on sale is a show announcement whatever the artwork; the client's call outranks that, and a swipe through the whole roster is a busy-agency argument rather than a flyer for one night. Buffer accepted 8 slides on LinkedIn on a live run. Slides come from `render_tour_poster()` in `lp/cards.py` over `upcoming_tour_dates()` in `lp/sheets.py`. **The caption is hardcoded, not generated:** "Our acts are booked and busy. Swipe to see the tours on sale now." A model asked to write around a date list pads it straight back into the paragraphs the client rejected. Instagram gets the caption alone (captions do not linkify, so a 140-character booking URL is dead weight); Facebook gets a booking line with the agency email (it carried `STEVE_CALENDAR_LINK` until 2026-08-18). Verified on real data: 8 slides, 65-character Instagram caption.
 - **Two exclusions, both learned from real output:** an act with fewer than `TOUR_CAROUSEL_MIN_ACT_DATES` (4) upcoming dates does not read as "on tour", and an act whose dates are all at one venue is a **residency**, which renders as a dozen identical rows and looks like a bug (Reza hit this exactly).
 - **The whole post is skipped unless the roster looks busy (client direction 2026-08-04: only run it "if there are a lot of dates that can be displayed").** Floors: `TOUR_CAROUSEL_MIN_SLIDES` (4) and `TOUR_CAROUSEL_MIN_DATES` (24, across the slides that render). A two-slide swipe is a thin listing wearing the format the client liked. Current data clears it comfortably: 8 slides, 101 dates.
 - **Cruise dates are dropped (`_is_cruise_date()` in `main.py`, client direction 2026-08-04: take Kyle Martin's Piano Man off "now, and in the future, he's just doing cruises").** A buyer cannot book a date on the Celebrity Edge, and "CocoCay, Bahamas" is not a date a reader can act on. Matched on venue and city, **not** kept as a list of act names, because the rule is about the booking and not the performer: an act comes back on its own the week it plays four theatres. Three patterns, all taken from real sheet rows: the cruise line (`Celebrity Edge`), the ship (`Ruby Princess`, `... of the Seas`), and the port of call (`CocoCay`, `Costa Maya`, `Charlotte Amalie`), which is how a whole itinerary appears in the sheet. Acts fall off through the ordinary date floor rather than a special case: Piano Man went 13 dates to 2, **Legends of Classic Rock 13 to 1** (its dates were an entire Caribbean itinerary, and the client only named Piano Man, so flag it if they expected it kept). The Platters lost one cruise date out of ten and stayed.
@@ -372,7 +537,10 @@ All 134 Buffer drafts were deleted on 2026-07-31 to start clean. There is no dra
 
 - **Two sources, neither of which needs a story to exist.** `_tour_carousel_topic()` builds **one** post covering every touring act (client direction 2026-08-03: "we also want the tour posters to be one post, like, look at all these artists on tour"), sharing `_tour_carousel_slides()` with `--tour-carousel` so both produce the same thing. One act's dates is a listing; the whole roster in one swipe is the agency looking busy, which is what the Reliant post was doing. `_act_clip_topic()` then cuts one clip per act. A floor of 2 comes back as the carousel plus a clip.
 - **Routing:** `tour_poster` goes to **all three** (client direction 2026-08-04). `act_video` goes to **all three**, including LinkedIn: it is the act performing with no date attached, so it is the one visual type that is not a show announcement.
-- **Dedup:** the carousel is week-stamped (`tourcarousel_<YYYY-Www>`), so it fires at most once a week; its slides change as dates move, so it is worth repeating, just not twice in a week. Clips are quarter-stamped per act.
+- **Dedup and cadence: the carousel is MONTHLY, and it is an extra (client direction 2026-08-19).** It is month-stamped (`tourcarousel_<YYYY-MM>`), so the first run of a month drafts it and every later run that month is a no-op. That stamp is the entire "first run of the month" mechanism; there is no calendar check to maintain. Weekly was the old cadence and the client cut it: "too many carousel posts like that will get old." Clips are quarter-stamped per act.
+- **It takes its own Tuesday slot and consumes none of the week's** (`carousel_slot=get_week_slots()[0]` passed with `slots=[]`). Two reasons, both the client's: a carousel of dates should be drafted right before it posts so a date that moves can still be caught, and the scheduled run is Monday, so Tuesday is the next morning. And it is drafted "in addition to the normal drafts", so it must not displace anything the ranked pool selected.
+- **It is deliberately not counted toward `VISUAL_MIN_PER_WEEK`.** Letting it satisfy the floor would mean a month with a carousel quietly gets one fewer clip or stat card, which is the opposite of an addition.
+- **Changing the stamp period orphans the old keys.** August's carousel had already been drafted under the week key `tourcarousel_2026-W34`, so the month switch would have drafted a second August one. `tourcarousel_2026-08` was written into the Sheets dedup store by hand. Same class of thing as the Concert of Kings re-booking key.
 - **Captions are hardcoded, not generated**, for the same reason the carousel's is. "Our acts are booked and busy. Swipe to see the tours on sale now." and "<act>, live." Instagram gets the caption alone; Facebook and LinkedIn get a `Booking:` line.
 - **The floor runs even when the week has no slot left**; the extras queue behind the schedule rather than being dropped. Skipped in single-artist mode and in news-only mode (where the caller asked for exactly N news posts).
 - **Re-booking stat cards count toward the floor**, and since the venue-name fix (2026-08-04) they are the most reliable thing filling it. On a real dry run 2026-08-04 the floor was satisfied 2 of 2 by two re-booking cards alone, with the carousel already used for the week.
@@ -417,8 +585,8 @@ the runner image and without which clips are skipped silently.
 
 **When adding an env var, add it to the workflow in the same commit.** The tuning knobs
 (`SHOW_BASE_SCORE`, `MAX_SHOWS_PER_WEEK`, `VISUAL_MIN_PER_WEEK`, `VISUAL_RESERVED_SLOTS`,
-`LINKEDIN_RESERVED_SLOTS`, `REBOOKING_MAX_PER_RUN`, `TOUR_CAROUSEL_MIN_*`, `COST_CAP_USD`,
-`CARD_DIR`, `VIDEO_DIR`) are deliberately left out,
+`LINKEDIN_RESERVED_SLOTS`, `REBOOKING_MAX_PER_RUN`, `VENUE_HISTORY_MIN_COUNT`,
+`TOUR_CAROUSEL_MIN_*`, `COST_CAP_USD`, `CARD_DIR`, `VIDEO_DIR`) are deliberately left out,
 since their code defaults are the intended production values.
 
 **The booking link is `https://www.loveproductions.com/go/steve` (client direction 2026-08-03).** Not the 200-character Google Calendar URL it redirects to, which was burning most of a LinkedIn post's character budget. **The `www` is required**: `loveproductions.com/go/steve` returns 404, only `www.loveproductions.com/go/steve` redirects. Set in `.env` **and** as a repo secret; the two had drifted, `.env` already held the short link while the Actions secret still held the long one, which is why the live run used the long form.
@@ -430,6 +598,8 @@ since their code defaults are the intended production values.
 **An edit that omits `dueAt` discards the post's schedule**, which is how the two survivors ended up due the next morning instead of five days later. Callers editing a scheduled draft must pass `scheduled_at` back in.
 
 **`SchedulingType` has only `automatic` and `notification`** (introspected 2026-08-03). There is no `scheduled` member; the mutation rejects it outright. The time is carried by `ShareMode` (`addToQueue` / `customScheduled` / `shareNext` / `shareNow`) plus `dueAt`, exactly as `post_draft_to_buffer()` does it.
+
+`edit_post_draft()` takes `images: list[str]` as well as `image` (added 2026-08-19 to re-render the tour carousel in place). Buffer's `assets` is a list, so a carousel has to be sent whole: passing only the changed slide leaves the post carrying that one slide.
 
 The per-network metadata rules from create apply here too: Facebook and Instagram edits are rejected without `metadata.<network>.type`, and an Instagram edit needs at least one image. **Verify with a `fetch_buffer_posts(statuses=("draft","scheduled","sent"))` check after any bulk edit**; a post that left `draft` will simply vanish from a drafts-only listing, which reads as "nothing happened" rather than as the alarm it is.
 
@@ -446,9 +616,15 @@ Event first (act, venue, when), then one light line in the agency's own voice th
 **Warmer, and a touch wordier (client direction 2026-08-05).** The client asked for posts "a tad bit warmer/wordier" and wrote the calibration themselves, for a Platters clip: *"The Platters, live! The music speaks for itself.\n\nInterested in booking a show? Set up an appointment with Steve Love: <link>"*. What changed:
 - **LinkedIn 200-300 characters of copy → 250-400, ceiling 400 → 500**, two to four sentences. Changed in `generate_posts()`, `linkedin.md`, `platform-tone.md`, `repurpose.md` and `index.md` together, since those five had to agree.
 - **A BE WARM block in the `generate_posts()` prompt**: contractions, an exclamation mark where earned, ask the reader something directly. It closes with "warmth is not the same as length: it buys you a few more words, not a paragraph", because the client's own caption is *shorter* than the post they rejected.
-- **The hardcoded visual captions changed too.** `_clip_caption()` in `main.py` replaced `"<act>, live."` with the client's line, and `_BOOKING_ASK` replaced the bare `"Booking: <url>"` on Facebook and LinkedIn with "Interested in booking a show? Set up an appointment with Steve Love:". Generated Facebook posts still close with the info@ email (client direction 2026-08-03); only the hardcoded visual captions use the calendar link, which is what they always did.
+- **The hardcoded visual captions changed too.** `_clip_caption()` in `main.py` replaced `"<act>, live."` with the client's line, and `_BOOKING_ASK` replaced the bare `"Booking: <url>"` on Facebook and LinkedIn with "Interested in booking a show? Set up an appointment with Steve Love:". **The contact in that line is now the email, not the calendar link** (2026-08-18): it reads "Interested in booking a show? Email info@loveproductions.com."
 - **"The music speaks for itself" is not a show-do-not-tell violation, and `reference-posts.md` now says so explicitly** so the next reader does not delete it. The banned move is *explaining* ("venues do not repeat a booking that did not sell" teaches the reader their job). A light closing line in the agency's own voice was always allowed, and is now encouraged. Same shape as the approved "Repeat dates are the kind of review we like best".
 - **`is_music_act()` in `lp/ai.py`**, because the client's line says "music" and four roster acts are not music: Reza, Michael Griffin Escapes, Vitaly, Calpulli. They get "The show speaks for itself", and `_NON_MUSIC_SUBSTITUTE` swaps `#LiveMusic` → `#LiveEntertainment` for them. `#LiveMusic` on an illusionist is the engine asserting something untrue, exactly like `#TributeBand` on Priscilla Presley, and harder to spot than copy doing it.
+
+**Instagram has two fixed CTAs now, and which one fires is decided by `hook_type` (client direction 2026-08-17).** Show announcements get `Link in bio for more info on tickets and booking.`; everything else keeps `Link in bio to set up an appointment for booking.` The reason is audience: a show post is read by fans who want tickets, and sending them to a booking calendar answers a question they did not ask. Neither line ever carries a URL or an email, for the usual reason (captions do not linkify).
+
+Both live in `lp/ai.py` as `IG_SHOW_CTA` / `IG_BOOKING_CTA` and are specified in **three** places that must agree, same as before: the `generate_posts()` prompt, the skill graph (`platforms/instagram.md` + `voice/platform-tone.md`), and `main.py`, which now **imports** `IG_BOOKING_CTA` instead of retyping it (the hardcoded carousel and clip captions are never show announcements, so they take the booking one).
+
+**And it is guaranteed in code, via `ensure_ig_cta()`**, applied between `ensure_mentions()` and `ensure_hashtags()`. Same lesson as `strip_dashes()` and `ensure_hashtags()`: a line specified word for word belongs in code, not in a prompt. It matters more here than usual, because the two lines differ by a few words, so a show announcement carrying the buyer CTA is a mistake no reviewer would flag but every fan would feel. It **replaces** a wrong `Link in bio...` line in place (keeping the position above the hashtags) rather than appending a second one. Note `_CTA_RE` uses `^[ \t]*`, not `^\s*`: a leading `\s*` swallowed the blank line above the CTA and glued it to the line before.
 
 **Instagram allows 5 hashtags through Buffer, and that is a ceiling, not a style rule (client, 2026-08-05).** Buffer rejects an Instagram post carrying more, so a caption over the limit is not a slightly worse post, it is no post. `_MAX_HASHTAGS` dropped 7 → 5 and `ensure_hashtags()` now **trims** as well as tops up, via `_trim_hashtags()`: hashtags past the fifth are removed, earliest kept, since the model puts the specific ones (act, artist) first and the generic ones last. `instagram.md` and `platform-tone.md` had been asking for "5-10" and now ask for at most 5.
 
@@ -502,7 +678,15 @@ Wired into four places, since asserting it once was how the error got out:
 
 The test in code and in the graph: **delete the sentence; if the reader loses no information, it was fluff.** That catches "the name still draws", "that says everything", "that's the whole story", "if your crowd knows the difference, this is the one", and any assertion that the act is great, special, or worth booking. Note the client's rewrite is **not shorter** than what it replaced: cutting fluff means cutting the *interpretation*, not the detail, and their version carries more fact ("the follow-up to her original, covering her life, her losses, and what came after"). Landed as a SHOW, DO NOT TELL block in the `generate_posts()` prompt, a third worked example in `voice/reference-posts.md`, and a second family in `humanizer.md`'s "explanatory kicker" section. Verified by regenerating the same topic: Facebook came back essentially identical to the client's own rewrite.
 
-**Facebook now ends with a fixed booking line**, `Booking inquiries: info@loveproductions.com`, after the source link, taken from that rewrite. Note this is the **email**, not `STEVE_CALENDAR_LINK`: LinkedIn uses the calendar (buyers), Instagram uses a DM (no linkifying), Facebook uses the email because that is what the client wrote. All three are now deterministic instructions in `generate_posts()` rather than left to the model.
+**Facebook now ends with a fixed booking line**, `Booking inquiries: info@loveproductions.com`, after the source link, taken from that rewrite. As of 2026-08-18 LinkedIn ends on the same line; Instagram still uses the bio link (captions do not linkify). All three are deterministic instructions in `generate_posts()` rather than left to the model.
+
+**The booking contact on social is the email again (client direction 2026-08-18).** `info@loveproductions.com`, not `STEVE_CALENDAR_LINK`, on every social channel. This reverses the 2026-07-31 switch to the calendar link. The link stays where it was always the better shape: the **website article**, where it is an anchor on the words "this link" rather than a URL spending a post's character budget. `_build_news_post()` is the only remaining caller of `config.STEVE_CALENDAR_LINK`.
+
+- **One constant, `config.BOOKING_EMAIL`** (env-overridable), used by the LinkedIn and Facebook CTA instructions in `generate_posts()` and by `_BOOKING_ASK` in `main.py`. The three had been retyping the address.
+- **Guaranteed in code, not asked for in the prompt.** `ensure_booking_cta()` in `lp/ai.py` rewrites every LinkedIn post's booking line to `Booking inquiries: info@loveproductions.com`, applied next to `ensure_ig_cta()`. Same lesson as `strip_dashes()`: a line specified word for word belongs in code, and the model has months of prompting behind it telling it to print the calendar URL. A booking line is matched as a line carrying a booking word **and** a contact (email or URL); both halves are required, or "repeat bookings are the review we like best" reads as a CTA and the act-page line gets eaten. An existing line is replaced in place, so the CTA keeps its position above the act-page link.
+- **An act-led LinkedIn post now carries exactly one URL**, the act page. It used to carry two.
+- **Graph updated in the same pass** so nothing contradicts: `platforms/linkedin.md`, `voice/platform-tone.md`, `voice/brand-voice.md`, `engine/repurpose.md`, `voice/reference-posts.md`.
+- **The four affected Buffer drafts were repaired in place** on 2026-08-18 (2 re-booking LinkedIn posts, and the tour carousel's Facebook and LinkedIn drafts), via `edit_post_draft()` with `scheduled_at` passed back. All stayed `draft` at their original times. Ten **sent** posts still carry the old link and were deliberately left alone.
 
 **Editing a post that is already queued to send: `edit_post_draft(..., keep_scheduled=True)`.** The only case where `saveToDraft` is False, so it *requires* an explicit **future** `scheduled_at` and raises without one. That guard is the lesson of the incident above: the damage came from an edit with neither `saveToDraft` nor a `dueAt`, which re-slotted the post into a past automatic slot and published it immediately. An explicit future `customScheduled` time cannot do that. Verified 2026-08-03 on a live scheduled post: status stayed `scheduled`, `dueAt` unchanged.
 
@@ -519,6 +703,10 @@ TOUR_DATES_SHEET_ID     # optional: tour dates sheet from the lp-tour-dates repo
 COST_CAP_USD            # default: 5.00
 SHOW_BASE_SCORE         # default: 0.75, baseline score for shows/gig-dates in the ranked pool (see "Scoring and scheduling"); raise to protect shows, lower to favor news
 REBOOKING_MAX_PER_RUN   # default: 2, max "back by popular demand" posts per run (raised from 1 on 2026-08-04, the client asked for more)
+VENUE_HISTORY_MIN_COUNT # default: 3, non-zero enables the act's-own-page date lookup behind a re-booking count; 0 disables it
+DATE_CHECK_MAX_SEARCHES # default: 8, dates one run may spend a web search on to corroborate a re-booking count (a web_search call is ~$0.15, well above an ordinary Haiku call)
+DATE_CHECK_CACHE_DIR    # default: cache/date-checks, where those verdicts are cached, negatives included
+VENUE_HISTORY_CACHE_DIR # default: cache/venue-history, where those lookups are cached
 LINKEDIN_RESERVED_SLOTS # default: 2, week slots held back for LinkedIn-eligible buyer-proof content when shows/news would take them all; 0 disables
 MAX_SHOWS_PER_WEEK      # default: 3, hard cap on show announcements per week (Airtable shows + gig-date news together)
 VISUAL_MIN_PER_WEEK     # default: 2, floor (not a cap) on graphic/video-led posts per week; 0 disables the top-up phase
@@ -530,7 +718,8 @@ GOOGLE_APPLICATION_CREDENTIALS_JSON  # service account JSON string (CI/Actions)
 LINKEDIN_ANALYTICS_CSV  # optional: path to manually exported LinkedIn analytics CSV
 LP_NEWS_URL             # optional: LP News plugin endpoint, e.g. https://www.loveproductions.com/wp-json/lp-news/v1/publish-news
 LP_NEWS_SECRET          # optional: secret from the WP "Settings → LP News" page (X-LP-News-Secret header). Unset → website posting skipped
-STEVE_CALENDAR_LINK     # https://www.loveproductions.com/go/steve (NOT the raw Google Calendar URL, and NOT the bare domain: loveproductions.com/go/steve 404s, only the www host redirects); the "Steve Love" anchor in every website news article's closing booking CTA points here. Unset → CTA still appears, name is plain text
+STEVE_CALENDAR_LINK     # https://www.loveproductions.com/go/steve (NOT the raw Google Calendar URL, and NOT the bare domain: loveproductions.com/go/steve 404s, only the www host redirects); the "Steve Love" anchor in every website news article's closing booking CTA points here. Unset → CTA still appears, name is plain text. WEBSITE ONLY as of 2026-08-18: no social post prints it
+BOOKING_EMAIL           # default: info@loveproductions.com, the booking contact on every social post
 VIMEO_CLIENT_ID         # LP's own act footage, source for the short clips cut by lp/vimeo.py
 VIMEO_ACCESS_TOKEN      # needs the video_files scope or the API omits download links
 VIMEO_CLIENT_SECRET

@@ -20,6 +20,7 @@ callers can fall back gracefully.
 import html
 import logging
 import re
+from datetime import date
 from urllib.parse import urljoin
 
 import requests
@@ -354,6 +355,78 @@ def fetch_act_photo(url: str, act: str = "") -> str | None:
     if best:
         log.info("Act photo for %s -> %s (score %d, %dpx)", url, best, best_score, best_width)
     return best
+
+
+# ── Show-date verification ────────────────────────────────────────────────────
+#
+# The counterpart to verify_quote_on_page() for hard numbers. A re-booking card
+# prints a count, and a count is only as good as the dates under it, so a date a
+# model says it found has to be demonstrably at the URL it cited.
+
+_MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July",
+                "August", "September", "October", "November", "December")
+
+
+def _date_forms(d: date) -> list[str]:
+    """Every way a listing might print one date, normalized for comparison."""
+    mon, day, yr = _MONTH_NAMES[d.month - 1], d.day, d.year
+    forms = [
+        f"{mon} {day}, {yr}", f"{mon} {day} {yr}", f"{mon[:3]} {day}, {yr}",
+        f"{mon[:3]} {day} {yr}", f"{day} {mon} {yr}", f"{day} {mon[:3]} {yr}",
+        d.isoformat(),
+        f"{d.month}/{d.day}/{yr}", f"{d.month:02d}/{d.day:02d}/{yr}",
+        f"{d.month}-{d.day}-{yr}", f"{d.month}/{d.day}/{str(yr)[2:]}",
+    ]
+    return [_normalize(f) for f in forms]
+
+
+def verify_date_on_page(url: str, show_date: date, venue: str = "") -> bool:
+    """True only if ``url`` demonstrably carries this date (and venue, if given).
+
+    Fails closed, like :func:`verify_quote_on_page`: an unreachable page, a
+    paywall or a JavaScript-rendered listing returns False. A cited page we
+    cannot read is not proof, and the whole point of the check is that nothing
+    reaches a graphic on a model's say-so.
+    """
+    if not url or not show_date:
+        return False
+    haystack = _normalize(fetch_page_text(url))
+    if not haystack:
+        log.info("Date verification: no text retrieved from %s", url)
+        return False
+    if not any(form in haystack for form in _date_forms(show_date)):
+        log.info("Date verification FAILED, %s not printed at %s", show_date, url)
+        return False
+    # The date alone is not enough on a page listing a whole season. Match the
+    # venue's identifying words too when we have a name to check.
+    core = [w for w in _normalize(venue).split()
+            if w not in ("the", "casino", "resort", "theatre", "theater", "center",
+                         "centre", "hall", "arena", "auditorium", "spa", "at", "of",
+                         "and", "opry", "playhouse", "room", "club")]
+    if core and not all(w in haystack for w in core):
+        log.info("Date verification FAILED, %s not named at %s", venue, url)
+        return False
+    return True
+
+
+def url_encodes_date(url: str, show_date: date) -> bool:
+    """True when the URL itself spells out the date.
+
+    Ticket pages are routinely JavaScript-rendered or bot-blocked, so the page
+    body is unreadable while the URL says ``.../rancho-mirage-ca-4-4-2025``.
+    That is still a check made in code against something outside Airtable, and
+    it is the only concession to a page we cannot open.
+    """
+    if not url or not show_date:
+        return False
+    digits = re.sub(r"[^0-9]+", "-", url.lower()).strip("-")
+    parts = digits.split("-")
+    y, m, d = str(show_date.year), str(show_date.month), str(show_date.day)
+    for i in range(len(parts) - 2):
+        trio = parts[i:i + 3]
+        if [p.lstrip("0") or "0" for p in trio] in ([m, d, y], [y, m, d], [d, m, y]):
+            return True
+    return False
 
 
 def verify_quote_on_page(url: str, quote: str) -> bool:
